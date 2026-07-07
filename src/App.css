@@ -35,12 +35,24 @@
 }
 
 .operation-grid {
-  display: grid;
+  display: flex;
   min-height: 0;
   flex: 1;
-  grid-template-columns: minmax(420px, 1.08fr) minmax(340px, 0.92fr);
-  align-items: stretch;
+  flex-direction: column;
   gap: 14px;
+}
+
+.operation-grid > * {
+  min-width: 0;
+}
+
+.operation-grid > .panel-stack {
+  flex: 0 0 auto;
+}
+
+.operation-grid > [data-slot="card"] {
+  min-height: 420px;
+  flex: 1 0 420px;
 }
 
 .settings-grid {
