@@ -72,7 +72,6 @@ function App() {
                       singleFile={workspace.singleFile}
                       outputDir={workspace.outputDir}
                       options={workspace.options}
-                      progress={workspace.transcriptionProgress}
                       isTranscribing={workspace.isTranscribing}
                       canRun={workspace.canRunSingle}
                       onPickFile={workspace.pickSingleFile}
@@ -93,7 +92,6 @@ function App() {
                       files={workspace.batchFiles}
                       outputDir={workspace.outputDir}
                       options={workspace.options}
-                      progress={workspace.transcriptionProgress}
                       isTranscribing={workspace.isTranscribing}
                       canRun={workspace.canRunBatch}
                       onPickFiles={workspace.pickBatchFiles}

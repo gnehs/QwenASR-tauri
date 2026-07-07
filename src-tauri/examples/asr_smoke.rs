@@ -1,6 +1,7 @@
 use std::{
-    env,
+    env, fs,
     path::{Path, PathBuf},
+    process::Command,
     time::Instant,
 };
 
@@ -9,6 +10,7 @@ use tokenizers::{
     decoders::byte_level::ByteLevel as ByteLevelDecoder, models::bpe::BPE,
     pre_tokenizers::byte_level::ByteLevel, Tokenizer,
 };
+use uuid::Uuid;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const ASR_LANGUAGES: &[&str] = &[
@@ -85,13 +87,14 @@ fn main() -> Result<()> {
     };
 
     ensure_tokenizer_json(&model_dir)?;
+    let prepared_audio = prepare_audio(audio_path)?;
 
     let started = Instant::now();
     let engine = AsrInference::load(&model_dir, default_device())?;
     let load_elapsed = started.elapsed();
 
     let started = Instant::now();
-    let result = engine.transcribe(audio_path, language)?;
+    let result = engine.transcribe(prepared_audio.path_str()?, language)?;
     let transcribe_elapsed = started.elapsed();
     let realtime_factor = transcribe_elapsed.as_secs_f64() / result.duration_seconds.max(0.001);
     let text = normalize_asr_text(&result, language.is_some());
@@ -107,6 +110,64 @@ fn main() -> Result<()> {
     println!("text:\n{}", text);
 
     Ok(())
+}
+
+struct TempAudio {
+    path: PathBuf,
+}
+
+impl TempAudio {
+    fn path_str(&self) -> Result<&str> {
+        self.path
+            .to_str()
+            .ok_or_else(|| "Prepared audio path contains unsupported characters.".into())
+    }
+}
+
+impl Drop for TempAudio {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn prepare_audio(audio_path: &str) -> Result<TempAudio> {
+    let input = Path::new(audio_path);
+    if !input.is_file() {
+        return Err(format!("Audio file does not exist: {}", input.display()).into());
+    }
+
+    let output = std::env::temp_dir().join(format!("qwenasr-smoke-{}.wav", Uuid::new_v4()));
+    let status = Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-i",
+            audio_path,
+            "-map",
+            "0:a:0",
+            "-vn",
+            "-af",
+            "aresample=16000,apad=whole_len=320",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-acodec",
+            "pcm_s16le",
+            "-f",
+            "wav",
+        ])
+        .arg(&output)
+        .status()?;
+
+    if !status.success() {
+        let _ = fs::remove_file(&output);
+        return Err("FFmpeg failed to normalize the smoke-test audio.".into());
+    }
+
+    Ok(TempAudio { path: output })
 }
 
 fn default_model_dir() -> Result<PathBuf> {

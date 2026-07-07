@@ -18,12 +18,17 @@ use crate::models::{
 };
 use crate::paths::{model_dir, model_status};
 use crate::srt;
+use crate::vad::{self, AudioRange};
 
 const TRANSCRIPTION_PROGRESS_EVENT: &str = "transcription-progress";
 const TARGET_SRT_CHARS: usize = 42;
 const MAX_SRT_CHARS: usize = 72;
 const MIN_SEGMENT_MS: u64 = 900;
 const TRADITIONAL_CHINESE_LANGUAGE: &str = "chinese";
+const TRANSCRIBE_PHASE_START: f64 = 0.22;
+const TRANSCRIBE_PHASE_END: f64 = 0.84;
+const VAD_PHASE_START: f64 = 0.12;
+const VAD_PHASE_END: f64 = 0.20;
 static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
 const ASR_LANGUAGES: &[&str] = &[
     "Chinese",
@@ -294,12 +299,55 @@ fn emit_progress(
     percent: f64,
     eta_ms: Option<u128>,
 ) {
+    emit_progress_with_metrics(
+        app,
+        started,
+        state,
+        phase,
+        message,
+        audio_path,
+        current_file,
+        file_index,
+        total_files,
+        percent,
+        eta_ms,
+        None,
+    );
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProgressMetrics {
+    chunk_index: Option<usize>,
+    total_chunks: Option<usize>,
+    chunk_start_ms: Option<u64>,
+    chunk_end_ms: Option<u64>,
+    processed_audio_ms: Option<u64>,
+    total_speech_ms: Option<u64>,
+    skipped_silence_ms: Option<u64>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_progress_with_metrics(
+    app: &AppHandle,
+    started: Instant,
+    state: &str,
+    phase: &str,
+    message: &str,
+    audio_path: Option<&str>,
+    current_file: Option<&str>,
+    file_index: usize,
+    total_files: usize,
+    percent: f64,
+    eta_ms: Option<u128>,
+    metrics: Option<ProgressMetrics>,
+) {
     let percent = clamp_percent(percent);
     let eta_ms = match state {
         "complete" => Some(0),
         "error" => None,
         _ => eta_ms.or_else(|| estimate_eta(started, percent)),
     };
+    let metrics = metrics.unwrap_or_default();
 
     let _ = app.emit(
         TRANSCRIPTION_PROGRESS_EVENT,
@@ -314,7 +362,55 @@ fn emit_progress(
             percent,
             elapsed_ms: started.elapsed().as_millis(),
             eta_ms,
+            chunk_index: metrics.chunk_index,
+            total_chunks: metrics.total_chunks,
+            chunk_start_ms: metrics.chunk_start_ms,
+            chunk_end_ms: metrics.chunk_end_ms,
+            processed_audio_ms: metrics.processed_audio_ms,
+            total_speech_ms: metrics.total_speech_ms,
+            skipped_silence_ms: metrics.skipped_silence_ms,
         },
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_chunk_progress(
+    app: &AppHandle,
+    progress_started: Instant,
+    audio_path: &str,
+    file_index: usize,
+    total_files: usize,
+    chunk_index: usize,
+    total_chunks: usize,
+    chunk: AudioRange,
+    processed_audio_ms: u64,
+    total_speech_ms: u64,
+    skipped_silence_ms: u64,
+    percent: f64,
+    phase: &str,
+    message: &str,
+) {
+    emit_progress_with_metrics(
+        app,
+        progress_started,
+        "running",
+        phase,
+        message,
+        Some(audio_path),
+        Some(audio_path),
+        file_index,
+        total_files,
+        percent,
+        None,
+        Some(ProgressMetrics {
+            chunk_index: Some(chunk_index),
+            total_chunks: Some(total_chunks),
+            chunk_start_ms: Some(chunk.start_ms()),
+            chunk_end_ms: Some(chunk.end_ms()),
+            processed_audio_ms: Some(processed_audio_ms),
+            total_speech_ms: Some(total_speech_ms),
+            skipped_silence_ms: Some(skipped_silence_ms),
+        }),
     );
 }
 
@@ -411,34 +507,163 @@ fn transcribe_with_context(
     );
 
     let prepared_audio = audio::prepare_audio_for_asr(audio_path)?;
-    let inference_percent = progress_between(range_start, range_end, 0.25);
+    let normalized_samples = audio::read_normalized_i16(prepared_audio.inference_path())?;
+    let analysis_percent = progress_between(range_start, range_end, VAD_PHASE_START);
     emit_progress(
         app,
         progress_started,
         "running",
-        "transcribing",
-        "模型推論中",
+        "analyzingAudio",
+        "偵測語音與靜音片段",
         Some(audio_path),
         Some(audio_path),
         file_index,
         total_files,
-        inference_percent,
+        analysis_percent,
         None,
+    );
+
+    let mut last_vad_percent = analysis_percent;
+    let mut last_vad_message = "";
+    let vad_analysis = vad::analyze_with_progress(&normalized_samples, |vad_progress| {
+        let file_ratio = progress_between(VAD_PHASE_START, VAD_PHASE_END, vad_progress.ratio);
+        let percent = progress_between(range_start, range_end, file_ratio);
+        let message_changed = vad_progress.message != last_vad_message;
+        let moved_enough = percent - last_vad_percent >= 0.5;
+        if message_changed || moved_enough || vad_progress.ratio >= 1.0 {
+            last_vad_percent = percent;
+            last_vad_message = vad_progress.message;
+            emit_progress(
+                app,
+                progress_started,
+                "running",
+                "analyzingAudio",
+                vad_progress.message,
+                Some(audio_path),
+                Some(audio_path),
+                file_index,
+                total_files,
+                percent,
+                None,
+            );
+        }
+    })?;
+    let chunks = vad_analysis.chunks;
+    let total_chunk_audio_ms = vad_analysis.chunk_audio_ms.max(1);
+    let skipped_silence_ms = vad_analysis.skipped_silence_ms;
+    let mut processed_audio_ms = 0u64;
+    let mut transcript_parts = Vec::with_capacity(chunks.len());
+    let mut segments = Vec::new();
+    let total_chunks = chunks.len();
+    let vad_message = if skipped_silence_ms > 0 {
+        format!(
+            "找到 {total_chunks} 個有聲片段，將跳過 {} 靜音",
+            format_duration_short(skipped_silence_ms)
+        )
+    } else {
+        format!("找到 {total_chunks} 個有聲片段，沒有可跳過的長靜音")
+    };
+    emit_progress_with_metrics(
+        app,
+        progress_started,
+        "running",
+        "analyzingAudio",
+        &vad_message,
+        Some(audio_path),
+        Some(audio_path),
+        file_index,
+        total_files,
+        progress_between(range_start, range_end, VAD_PHASE_END),
+        None,
+        Some(ProgressMetrics {
+            chunk_index: None,
+            total_chunks: Some(total_chunks),
+            chunk_start_ms: None,
+            chunk_end_ms: None,
+            processed_audio_ms: Some(0),
+            total_speech_ms: Some(total_chunk_audio_ms),
+            skipped_silence_ms: Some(skipped_silence_ms),
+        }),
     );
 
     let language = normalize_language(options.language.as_deref());
     let language_forced = language.is_some();
-    let inference_audio_path = prepared_audio.inference_path().to_str().ok_or_else(|| {
-        AppError::Transcription("Prepared audio path contains unsupported characters.".into())
-    })?;
-    let raw_result = engine
-        .transcribe(inference_audio_path, language.as_deref())
-        .map_err(|error| {
-            AppError::Transcription(format!("Qwen3-ASR failed to transcribe this file: {error}"))
+
+    for (index, chunk) in chunks.iter().enumerate() {
+        let chunk_index = index + 1;
+        let before_ratio = processed_audio_ms as f64 / total_chunk_audio_ms as f64;
+        let before_percent = progress_between(
+            progress_between(range_start, range_end, TRANSCRIBE_PHASE_START),
+            progress_between(range_start, range_end, TRANSCRIBE_PHASE_END),
+            before_ratio,
+        );
+        emit_chunk_progress(
+            app,
+            progress_started,
+            audio_path,
+            file_index,
+            total_files,
+            chunk_index,
+            total_chunks,
+            *chunk,
+            processed_audio_ms,
+            total_chunk_audio_ms,
+            skipped_silence_ms,
+            before_percent,
+            "transcribingSegments",
+            &format!("轉錄第 {chunk_index} / {total_chunks} 個有聲片段"),
+        );
+
+        let chunk_audio = write_chunk_audio(&normalized_samples, *chunk)?;
+        let chunk_audio_path = chunk_audio.inference_path().to_str().ok_or_else(|| {
+            AppError::Transcription("Chunk audio path contains unsupported characters.".into())
         })?;
+        let raw_result = engine
+            .transcribe(chunk_audio_path, language.as_deref())
+            .map_err(|error| {
+                AppError::Transcription(format!(
+                    "Qwen3-ASR failed to transcribe chunk {chunk_index}/{total_chunks}: {error}"
+                ))
+            })?;
+
+        let chunk_text = normalize_asr_text(&raw_result, language_forced);
+        let chunk_text = convert_text_for_output_language(chunk_text, language.as_deref())?;
+        if !chunk_text.trim().is_empty() {
+            segments.extend(build_approximate_segments_with_offset(
+                &chunk_text,
+                chunk.duration_ms(),
+                chunk.start_ms(),
+            ));
+            transcript_parts.push(chunk_text);
+        }
+
+        processed_audio_ms = processed_audio_ms.saturating_add(chunk.duration_ms());
+        let after_ratio = processed_audio_ms as f64 / total_chunk_audio_ms as f64;
+        let after_percent = progress_between(
+            progress_between(range_start, range_end, TRANSCRIBE_PHASE_START),
+            progress_between(range_start, range_end, TRANSCRIBE_PHASE_END),
+            after_ratio,
+        );
+        emit_chunk_progress(
+            app,
+            progress_started,
+            audio_path,
+            file_index,
+            total_files,
+            chunk_index,
+            total_chunks,
+            *chunk,
+            processed_audio_ms.min(total_chunk_audio_ms),
+            total_chunk_audio_ms,
+            skipped_silence_ms,
+            after_percent,
+            "transcribingSegments",
+            &format!("完成第 {chunk_index} / {total_chunks} 個有聲片段"),
+        );
+    }
 
     let finalize_percent = progress_between(range_start, range_end, 0.88);
-    emit_progress(
+    emit_progress_with_metrics(
         app,
         progress_started,
         "running",
@@ -458,12 +683,18 @@ fn transcribe_with_context(
         total_files,
         finalize_percent,
         None,
+        Some(ProgressMetrics {
+            chunk_index: Some(total_chunks),
+            total_chunks: Some(total_chunks),
+            chunk_start_ms: None,
+            chunk_end_ms: None,
+            processed_audio_ms: Some(total_chunk_audio_ms),
+            total_speech_ms: Some(total_chunk_audio_ms),
+            skipped_silence_ms: Some(skipped_silence_ms),
+        }),
     );
 
-    let text = normalize_asr_text(&raw_result, language_forced);
-    let text = convert_text_for_output_language(text, language.as_deref())?;
-    let audio_ms = (raw_result.duration_seconds.max(0.0) * 1000.0).round() as u64;
-    let segments = build_approximate_segments(&text, audio_ms);
+    let text = transcript_parts.join("\n");
     let srt_path = if options.write_srt {
         Some(write_srt(audio_path, options, &segments)?)
     } else {
@@ -491,6 +722,10 @@ fn transcribe_with_context(
         srt_path,
         duration_ms: started.elapsed().as_millis(),
     })
+}
+
+fn write_chunk_audio(samples: &[i16], chunk: AudioRange) -> AppResult<audio::PreparedAudio> {
+    audio::write_temp_asr_wav(&samples[chunk.start_sample..chunk.end_sample])
 }
 
 fn normalize_language(language: Option<&str>) -> Option<String> {
@@ -601,7 +836,16 @@ fn collapse_spaced_acronyms(text: &str) -> String {
     output
 }
 
+#[cfg(test)]
 fn build_approximate_segments(text: &str, audio_ms: u64) -> Vec<TranscriptSegment> {
+    build_approximate_segments_with_offset(text, audio_ms, 0)
+}
+
+fn build_approximate_segments_with_offset(
+    text: &str,
+    audio_ms: u64,
+    offset_ms: u64,
+) -> Vec<TranscriptSegment> {
     let text = text.trim();
     if text.is_empty() {
         return Vec::new();
@@ -638,14 +882,25 @@ fn build_approximate_segments(text: &str, audio_ms: u64) -> Vec<TranscriptSegmen
         };
 
         segments.push(TranscriptSegment {
-            start_ms: cursor_ms,
-            end_ms,
+            start_ms: offset_ms.saturating_add(cursor_ms),
+            end_ms: offset_ms.saturating_add(end_ms),
             text: unit.clone(),
         });
         cursor_ms = end_ms;
     }
 
     segments
+}
+
+fn format_duration_short(ms: u64) -> String {
+    let total_seconds = (ms as f64 / 1000.0).round() as u64;
+    if total_seconds < 60 {
+        return format!("{total_seconds} 秒");
+    }
+
+    let minutes = total_seconds / 60;
+    let seconds = total_seconds % 60;
+    format!("{minutes} 分 {seconds:02} 秒")
 }
 
 fn split_transcript_units(text: &str) -> Vec<String> {

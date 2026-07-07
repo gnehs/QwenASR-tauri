@@ -37,18 +37,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { OptionsPanel } from "@/components/transcription/OptionsPanel";
-import { TranscriptionProgressPanel } from "@/components/transcription/TranscriptionProgressPanel";
 import { basename } from "@/lib/format";
-import type {
-  OptionsState,
-  TranscriptionProgress,
-} from "@/types/transcription";
+import type { OptionsState } from "@/types/transcription";
 
 export function BatchTranscriptionPanel({
   files,
   outputDir,
   options,
-  progress,
   isTranscribing,
   canRun,
   onPickFiles,
@@ -61,7 +56,6 @@ export function BatchTranscriptionPanel({
   files: string[];
   outputDir: string;
   options: OptionsState;
-  progress: TranscriptionProgress | null;
   isTranscribing: boolean;
   canRun: boolean;
   onPickFiles: () => void;
@@ -151,9 +145,6 @@ export function BatchTranscriptionPanel({
               </Empty>
             )}
           </ScrollArea>
-          {isTranscribing ? (
-            <TranscriptionProgressPanel progress={progress} />
-          ) : null}
         </CardContent>
         <CardFooter className="workflow-footer">
           <p className="text-sm text-muted-foreground">

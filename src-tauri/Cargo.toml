@@ -30,6 +30,8 @@ hf-hub = { version = "1.0.0-rc.1", features = ["blocking", "rustls-tls"] }
 tokenizers = "0.21"
 opencc-rs = "0.5.2"
 hound = "3.5"
+tract-onnx = "0.22"
+rustfft = "6.4"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 qwen3_asr = { git = "https://github.com/second-state/qwen3_asr_rs", tag = "v0.2.0", default-features = false, features = ["mlx"] }
@@ -37,3 +39,9 @@ qwen3_asr = { git = "https://github.com/second-state/qwen3_asr_rs", tag = "v0.2.
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 qwen3_asr = { git = "https://github.com/second-state/qwen3_asr_rs", tag = "v0.2.0" }
 tch = "0.20"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

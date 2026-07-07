@@ -11,7 +11,7 @@ use uuid::Uuid;
 use crate::error::{AppError, AppResult};
 use crate::models::FfmpegStatus;
 
-const ASR_SAMPLE_RATE: u32 = 16_000;
+pub const ASR_SAMPLE_RATE: u32 = 16_000;
 const MIN_ASR_SAMPLES: u32 = 320;
 const TEMP_AUDIO_DIR: &str = "qwenasr-tauri";
 
@@ -67,6 +67,64 @@ pub fn prepare_audio_for_asr(audio_path: &str) -> AppResult<PreparedAudio> {
         )),
         Err(FfmpegError::Failed(message)) => Err(AppError::Transcription(message)),
     }
+}
+
+pub fn read_normalized_i16(path: &Path) -> AppResult<Vec<i16>> {
+    let reader = hound::WavReader::open(path).map_err(|error| {
+        AppError::Transcription(format!("Prepared audio could not be read as WAV: {error}"))
+    })?;
+    validate_asr_wav(reader.spec(), reader.duration()).map_err(|error| match error {
+        FfmpegError::Unavailable => AppError::Transcription("FFmpeg is unavailable.".into()),
+        FfmpegError::Failed(message) => AppError::Transcription(message),
+    })?;
+
+    reader
+        .into_samples::<i16>()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            AppError::Transcription(format!(
+                "Prepared audio contains invalid PCM samples: {error}"
+            ))
+        })
+}
+
+pub fn write_temp_asr_wav(samples: &[i16]) -> AppResult<PreparedAudio> {
+    let output = normalized_audio_path().map_err(|error| {
+        AppError::Transcription(format!(
+            "Could not create a temporary chunk audio file: {error}"
+        ))
+    })?;
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: ASR_SAMPLE_RATE,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+    let mut writer = hound::WavWriter::create(&output, spec).map_err(|error| {
+        AppError::Transcription(format!("Could not create a chunk WAV file: {error}"))
+    })?;
+
+    let min_samples = MIN_ASR_SAMPLES as usize;
+    for sample in samples {
+        writer.write_sample(*sample).map_err(|error| {
+            AppError::Transcription(format!("Could not write chunk audio samples: {error}"))
+        })?;
+    }
+    for _ in samples.len()..min_samples {
+        writer.write_sample(0i16).map_err(|error| {
+            AppError::Transcription(format!("Could not pad chunk audio samples: {error}"))
+        })?;
+    }
+
+    writer.finalize().map_err(|error| {
+        AppError::Transcription(format!("Could not finalize chunk WAV: {error}"))
+    })?;
+
+    Ok(PreparedAudio::new(output))
+}
+
+pub fn samples_to_ms(samples: usize) -> u64 {
+    ((samples as f64 / ASR_SAMPLE_RATE as f64) * 1000.0).round() as u64
 }
 
 fn normalize_with_ffmpeg(input: &Path) -> Result<PathBuf, FfmpegError> {
@@ -142,7 +200,10 @@ fn validate_normalized_wav(path: &Path) -> Result<(), FfmpegError> {
             "FFmpeg produced an audio file that could not be read as WAV: {error}"
         ))
     })?;
-    let spec = reader.spec();
+    validate_asr_wav(reader.spec(), reader.duration())
+}
+
+fn validate_asr_wav(spec: hound::WavSpec, duration: u32) -> Result<(), FfmpegError> {
     if spec.channels != 1
         || spec.sample_rate != ASR_SAMPLE_RATE
         || spec.sample_format != hound::SampleFormat::Int
@@ -154,10 +215,10 @@ fn validate_normalized_wav(path: &Path) -> Result<(), FfmpegError> {
         )));
     }
 
-    if reader.duration() < MIN_ASR_SAMPLES {
+    if duration < MIN_ASR_SAMPLES {
         return Err(FfmpegError::Failed(format!(
             "The selected file contains too little audio to transcribe safely after normalization: {} samples at {} Hz.",
-            reader.duration(),
+            duration,
             ASR_SAMPLE_RATE
         )));
     }

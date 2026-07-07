@@ -13,19 +13,14 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { OptionsPanel } from "@/components/transcription/OptionsPanel";
-import { TranscriptionProgressPanel } from "@/components/transcription/TranscriptionProgressPanel";
 import { basename } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import type {
-  OptionsState,
-  TranscriptionProgress,
-} from "@/types/transcription";
+import type { OptionsState } from "@/types/transcription";
 
 export function SingleTranscriptionPanel({
   singleFile,
   outputDir,
   options,
-  progress,
   isTranscribing,
   canRun,
   onPickFile,
@@ -36,7 +31,6 @@ export function SingleTranscriptionPanel({
   singleFile: string;
   outputDir: string;
   options: OptionsState;
-  progress: TranscriptionProgress | null;
   isTranscribing: boolean;
   canRun: boolean;
   onPickFile: () => void;
@@ -89,9 +83,6 @@ export function SingleTranscriptionPanel({
             </Field>
           </FieldGroup>
           <OptionsPanel options={options} onChange={onOptionsChange} />
-          {isTranscribing ? (
-            <TranscriptionProgressPanel progress={progress} />
-          ) : null}
         </CardContent>
         <CardFooter className="workflow-footer">
           <p className="text-sm text-muted-foreground">

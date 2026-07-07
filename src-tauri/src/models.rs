@@ -145,4 +145,11 @@ pub struct TranscriptionProgress {
     pub percent: f64,
     pub elapsed_ms: u128,
     pub eta_ms: Option<u128>,
+    pub chunk_index: Option<usize>,
+    pub total_chunks: Option<usize>,
+    pub chunk_start_ms: Option<u64>,
+    pub chunk_end_ms: Option<u64>,
+    pub processed_audio_ms: Option<u64>,
+    pub total_speech_ms: Option<u64>,
+    pub skipped_silence_ms: Option<u64>,
 }

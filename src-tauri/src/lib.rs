@@ -5,6 +5,7 @@ mod models;
 mod paths;
 mod srt;
 mod transcription;
+mod vad;
 
 use error::AppResult;
 use models::{

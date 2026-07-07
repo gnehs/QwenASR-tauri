@@ -235,6 +235,19 @@
   gap: 1px;
 }
 
+.transcription-progress-metrics {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+.transcription-progress-metrics span {
+  min-width: 0;
+}
+
 .transcription-progress-foot {
   color: var(--muted-foreground);
   font-size: 0.75rem;

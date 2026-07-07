@@ -54,6 +54,13 @@ export type TranscriptionProgress = {
   percent: number;
   elapsedMs: number;
   etaMs: number | null;
+  chunkIndex: number | null;
+  totalChunks: number | null;
+  chunkStartMs: number | null;
+  chunkEndMs: number | null;
+  processedAudioMs: number | null;
+  totalSpeechMs: number | null;
+  skippedSilenceMs: number | null;
 };
 
 export type OptionsState = {
