@@ -28,6 +28,7 @@ dirs = "6.0.0"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 hf-hub = { version = "1.0.0-rc.1", features = ["blocking", "rustls-tls"] }
 tokenizers = "0.21"
+opencc-rs = "0.5.2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 qwen3_asr = { git = "https://github.com/second-state/qwen3_asr_rs", tag = "v0.2.0", default-features = false, features = ["mlx"] }

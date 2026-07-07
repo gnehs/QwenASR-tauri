@@ -12,36 +12,58 @@ use tokenizers::{
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 const ASR_LANGUAGES: &[&str] = &[
-    "Cantonese",
-    "Macedonian",
-    "Portuguese",
-    "Indonesian",
-    "Vietnamese",
-    "Romanian",
-    "Hungarian",
-    "Filipino",
     "Chinese",
     "English",
+    "Cantonese (Hong Kong accent)",
+    "Cantonese (Guangdong accent)",
+    "Cantonese",
+    "Arabic",
     "German",
     "French",
     "Spanish",
+    "Portuguese",
+    "Indonesian",
     "Italian",
+    "Korean",
     "Russian",
+    "Thai",
+    "Vietnamese",
+    "Japanese",
     "Turkish",
+    "Hindi",
+    "Malay",
+    "Dutch",
     "Swedish",
     "Danish",
     "Finnish",
     "Polish",
-    "Arabic",
-    "Korean",
-    "Japanese",
+    "Czech",
+    "Filipino",
     "Persian",
     "Greek",
-    "Czech",
-    "Hindi",
-    "Malay",
-    "Dutch",
-    "Thai",
+    "Hungarian",
+    "Macedonian",
+    "Romanian",
+    "Anhui",
+    "Dongbei",
+    "Fujian",
+    "Gansu",
+    "Guizhou",
+    "Hebei",
+    "Henan",
+    "Hubei",
+    "Hunan",
+    "Jiangxi",
+    "Ningxia",
+    "Shandong",
+    "Shaanxi",
+    "Shanxi",
+    "Sichuan",
+    "Tianjin",
+    "Yunnan",
+    "Zhejiang",
+    "Wu language",
+    "Minnan language",
 ];
 
 fn main() -> Result<()> {
@@ -154,10 +176,13 @@ fn normalize_asr_text(
 
 fn parse_auto_asr_text(raw: &str) -> Option<&str> {
     let rest = raw.trim().strip_prefix("language ")?;
+    if let Some((_, text)) = rest.split_once("<asr_text>") {
+        return Some(text.trim());
+    }
+
     for language in ASR_LANGUAGES {
         if let Some(text) = rest.strip_prefix(language) {
             let text = text.trim_start();
-            let text = text.strip_prefix("<asr_text>").unwrap_or(text);
             return Some(text.trim());
         }
     }

@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
+use opencc_rs::{Config, OpenCC};
 use qwen3_asr::{
     inference::{AsrInference, TranscribeResult as QwenTranscribeResult},
     tensor::Device,
@@ -20,37 +22,61 @@ const TRANSCRIPTION_PROGRESS_EVENT: &str = "transcription-progress";
 const TARGET_SRT_CHARS: usize = 42;
 const MAX_SRT_CHARS: usize = 72;
 const MIN_SEGMENT_MS: u64 = 900;
+const TRADITIONAL_CHINESE_LANGUAGE: &str = "chinese";
+static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
 const ASR_LANGUAGES: &[&str] = &[
-    "Cantonese",
-    "Macedonian",
-    "Portuguese",
-    "Indonesian",
-    "Vietnamese",
-    "Romanian",
-    "Hungarian",
-    "Filipino",
     "Chinese",
     "English",
+    "Cantonese (Hong Kong accent)",
+    "Cantonese (Guangdong accent)",
+    "Cantonese",
+    "Arabic",
     "German",
     "French",
     "Spanish",
+    "Portuguese",
+    "Indonesian",
     "Italian",
+    "Korean",
     "Russian",
+    "Thai",
+    "Vietnamese",
+    "Japanese",
     "Turkish",
+    "Hindi",
+    "Malay",
+    "Dutch",
     "Swedish",
     "Danish",
     "Finnish",
     "Polish",
-    "Arabic",
-    "Korean",
-    "Japanese",
+    "Czech",
+    "Filipino",
     "Persian",
     "Greek",
-    "Czech",
-    "Hindi",
-    "Malay",
-    "Dutch",
-    "Thai",
+    "Hungarian",
+    "Macedonian",
+    "Romanian",
+    "Anhui",
+    "Dongbei",
+    "Fujian",
+    "Gansu",
+    "Guizhou",
+    "Hebei",
+    "Henan",
+    "Hubei",
+    "Hunan",
+    "Jiangxi",
+    "Ningxia",
+    "Shandong",
+    "Shaanxi",
+    "Shanxi",
+    "Sichuan",
+    "Tianjin",
+    "Yunnan",
+    "Zhejiang",
+    "Wu language",
+    "Minnan language",
 ];
 
 pub fn transcribe_file(
@@ -429,6 +455,7 @@ fn transcribe_with_context(
     );
 
     let text = normalize_asr_text(&raw_result, language_forced);
+    let text = convert_text_for_output_language(text, language.as_deref())?;
     let audio_ms = (raw_result.duration_seconds.max(0.0) * 1000.0).round() as u64;
     let segments = build_approximate_segments(&text, audio_ms);
     let srt_path = if options.write_srt {
@@ -464,7 +491,7 @@ fn normalize_language(language: Option<&str>) -> Option<String> {
     language
         .map(str::trim)
         .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))
-        .map(|value| value.to_lowercase())
+        .map(str::to_string)
 }
 
 fn normalize_asr_text(result: &QwenTranscribeResult, language_forced: bool) -> String {
@@ -477,12 +504,60 @@ fn normalize_asr_text(result: &QwenTranscribeResult, language_forced: bool) -> S
     collapse_spaced_acronyms(text)
 }
 
+fn convert_text_for_output_language(text: String, language: Option<&str>) -> AppResult<String> {
+    if should_convert_to_traditional_chinese(language) {
+        convert_simplified_to_traditional_chinese(&text)
+    } else {
+        Ok(text)
+    }
+}
+
+fn should_convert_to_traditional_chinese(language: Option<&str>) -> bool {
+    language.is_some_and(|value| {
+        value
+            .trim()
+            .eq_ignore_ascii_case(TRADITIONAL_CHINESE_LANGUAGE)
+    })
+}
+
+fn convert_simplified_to_traditional_chinese(text: &str) -> AppResult<String> {
+    if text.is_empty() {
+        return Ok(String::new());
+    }
+
+    if text.contains('\0') {
+        return Err(AppError::Transcription(
+            "OpenCC cannot convert transcript text containing NUL bytes.".into(),
+        ));
+    }
+
+    let mut converter = S2TW_CONVERTER
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .map_err(|_| AppError::Transcription("OpenCC converter lock poisoned.".into()))?;
+
+    if converter.is_none() {
+        *converter = Some(OpenCC::new([Config::S2TW]).map_err(|error| {
+            AppError::Transcription(format!("OpenCC converter initialization failed: {error}"))
+        })?);
+    }
+
+    converter
+        .as_ref()
+        .expect("OpenCC converter should be initialized")
+        .convert(text)
+        .map_err(|error| AppError::Transcription(format!("OpenCC conversion failed: {error}")))
+}
+
 fn parse_auto_asr_text(raw: &str) -> Option<&str> {
     let rest = raw.trim().strip_prefix("language ")?;
+    if let Some((_, text)) = rest.split_once("<asr_text>") {
+        return Some(text.trim());
+    }
+
     for language in ASR_LANGUAGES {
         if let Some(text) = rest.strip_prefix(language) {
             let text = text.trim_start();
-            let text = text.strip_prefix("<asr_text>").unwrap_or(text);
             return Some(text.trim());
         }
     }
@@ -668,10 +743,68 @@ mod tests {
     }
 
     #[test]
+    fn tracks_all_qwen_asr_languages_and_dialects() {
+        assert_eq!(ASR_LANGUAGES.len(), 52);
+    }
+
+    #[test]
+    fn parses_auto_dialect_with_asr_text_marker() {
+        let raw = "language Cantonese (Hong Kong accent)<asr_text>今日天氣很好。";
+
+        assert_eq!(parse_auto_asr_text(raw), Some("今日天氣很好。"));
+    }
+
+    #[test]
+    fn parses_every_auto_language_without_marker() {
+        for language in ASR_LANGUAGES {
+            let raw = format!("language {language}轉錄文字");
+
+            assert_eq!(
+                parse_auto_asr_text(&raw),
+                Some("轉錄文字"),
+                "failed to parse {language}"
+            );
+        }
+    }
+
+    #[test]
     fn collapses_spaced_acronyms() {
         assert_eq!(
             collapse_spaced_acronyms("A I客服和S A P系統"),
             "AI客服和SAP系統"
+        );
+    }
+
+    #[test]
+    fn detects_chinese_language_for_traditional_conversion() {
+        assert!(should_convert_to_traditional_chinese(Some("Chinese")));
+        assert!(should_convert_to_traditional_chinese(Some(" chinese ")));
+        assert!(!should_convert_to_traditional_chinese(Some("auto")));
+        assert!(!should_convert_to_traditional_chinese(Some("English")));
+        assert!(!should_convert_to_traditional_chinese(None));
+    }
+
+    #[test]
+    fn preserves_official_language_hint_casing() {
+        assert_eq!(
+            normalize_language(Some(" Cantonese (Hong Kong accent) ")).as_deref(),
+            Some("Cantonese (Hong Kong accent)")
+        );
+    }
+
+    #[test]
+    fn converts_simplified_chinese_to_taiwan_traditional() {
+        assert_eq!(
+            convert_text_for_output_language("汉语转换".into(), Some("Chinese")).unwrap(),
+            "漢語轉換"
+        );
+    }
+
+    #[test]
+    fn skips_conversion_for_non_chinese_output_language() {
+        assert_eq!(
+            convert_text_for_output_language("汉语转换".into(), Some("English")).unwrap(),
+            "汉语转换"
         );
     }
 
