@@ -33,6 +33,13 @@ async fn download_model(app: AppHandle, model_id: String) -> AppResult<ModelStat
 }
 
 #[tauri::command]
+async fn delete_model(model_id: String) -> AppResult<ModelStatus> {
+    tauri::async_runtime::spawn_blocking(move || paths::delete_model(&model_id))
+        .await
+        .map_err(|error| error::AppError::Model(error.to_string()))?
+}
+
+#[tauri::command]
 async fn transcribe_file(
     app: AppHandle,
     request: TranscribeFileRequest,
@@ -61,6 +68,7 @@ pub fn run() {
             list_available_models,
             get_ffmpeg_status,
             download_model,
+            delete_model,
             transcribe_file,
             transcribe_batch
         ])

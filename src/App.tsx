@@ -116,9 +116,12 @@ function App() {
                     selectedModelId={workspace.selectedModelId}
                     downloadProgress={workspace.downloadProgress}
                     isDownloading={workspace.isDownloading}
+                    deletingModelId={workspace.deletingModelId}
+                    isTranscribing={workspace.isTranscribing}
                     ffmpeg={workspace.ffmpeg}
                     onSelectModel={workspace.setSelectedModelId}
                     onDownload={workspace.downloadSelectedModel}
+                    onDeleteModel={workspace.deleteModel}
                     onRefresh={workspace.refreshRuntime}
                   />
                 ) : null}

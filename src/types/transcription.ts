@@ -58,13 +58,6 @@ export type TranscriptionProgress = {
 
 export type OptionsState = {
   language: string;
-  prompt: string;
-  segmentSeconds: number;
-  searchSeconds: number;
-  threads: number;
-  skipSilence: boolean;
-  pastText: boolean;
-  convertWithFfmpeg: boolean;
   writeSrt: boolean;
 };
 

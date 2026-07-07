@@ -22,9 +22,16 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-qwen-asr = "0.7.4"
 tauri-plugin-dialog = "2"
 thiserror = "2.0.18"
 dirs = "6.0.0"
 uuid = { version = "1.23.4", features = ["v4", "serde"] }
 hf-hub = { version = "1.0.0-rc.1", features = ["blocking", "rustls-tls"] }
+tokenizers = "0.21"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+qwen3_asr = { git = "https://github.com/second-state/qwen3_asr_rs", tag = "v0.2.0", default-features = false, features = ["mlx"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+qwen3_asr = { git = "https://github.com/second-state/qwen3_asr_rs", tag = "v0.2.0" }
+tch = "0.20"

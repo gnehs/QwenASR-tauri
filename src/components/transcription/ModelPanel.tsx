@@ -1,4 +1,10 @@
-import { CheckCircle2Icon, DownloadIcon, RefreshCwIcon } from "lucide-react";
+import { useState } from "react";
+import {
+  CheckCircle2Icon,
+  DownloadIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+} from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -9,6 +15,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import {
   Empty,
   EmptyContent,
@@ -28,18 +44,29 @@ export function ModelPanel({
   selectedModelId,
   downloadProgress,
   isDownloading,
+  deletingModelId,
+  isTranscribing,
   onSelectModel,
   onDownload,
+  onDeleteModel,
   onRefresh,
 }: {
   models: ModelStatus[];
   selectedModelId: string;
   downloadProgress: DownloadProgress | null;
   isDownloading: boolean;
+  deletingModelId: string | null;
+  isTranscribing: boolean;
   onSelectModel: (value: string) => void;
   onDownload: (modelId?: string) => void;
+  onDeleteModel: (modelId: string) => Promise<boolean>;
   onRefresh: () => void;
 }) {
+  const [deleteDialogModelId, setDeleteDialogModelId] = useState<string | null>(
+    null,
+  );
+  const isDeletingModel = deletingModelId !== null;
+
   return (
     <Card>
       <CardHeader>
@@ -68,60 +95,133 @@ export function ModelPanel({
         ) : (
           <div className="model-list">
             {models.map((model) => {
-            const isSelected = model.id === selectedModelId;
-            const isActiveDownload =
-              isDownloading && downloadProgress?.modelId === model.id;
+              const isSelected = model.id === selectedModelId;
+              const isActiveDownload =
+                isDownloading && downloadProgress?.modelId === model.id;
+              const isDeletingThisModel = deletingModelId === model.id;
+              const isDeleteDialogOpen = deleteDialogModelId === model.id;
+              const canDeleteModel =
+                model.installed &&
+                !isDownloading &&
+                !isDeletingModel &&
+                !isTranscribing;
 
-            return (
-              <div
-                key={model.id}
-                className={cn("model-card", isSelected && "is-selected")}
-              >
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="truncate text-sm font-medium">
-                      {model.title}
+              return (
+                <div
+                  key={model.id}
+                  className={cn("model-card", isSelected && "is-selected")}
+                >
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="truncate text-sm font-medium">
+                        {model.title}
+                      </div>
+                      {model.recommended ? (
+                        <Badge variant="secondary">建議</Badge>
+                      ) : null}
+                      {isSelected ? <Badge>使用中</Badge> : null}
                     </div>
-                    {model.recommended ? (
-                      <Badge variant="secondary">建議</Badge>
-                    ) : null}
-                    {isSelected ? <Badge>使用中</Badge> : null}
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {model.description}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Badge variant="outline">{model.sizeHint}</Badge>
+                      <Badge
+                        variant={model.installed ? "secondary" : "outline"}
+                      >
+                        {model.installed ? "已安裝" : "未下載"}
+                      </Badge>
+                    </div>
                   </div>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {model.description}
-                  </p>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Badge variant="outline">{model.sizeHint}</Badge>
-                    <Badge variant={model.installed ? "secondary" : "outline"}>
-                      {model.installed ? "已安裝" : "未下載"}
-                    </Badge>
+
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <Button
+                      variant={model.installed ? "outline" : "default"}
+                      disabled={
+                        isActiveDownload ||
+                        isDownloading ||
+                        isDeletingModel ||
+                        (model.installed && isSelected)
+                      }
+                      onClick={() => {
+                        onSelectModel(model.id);
+                        if (!model.installed) {
+                          onDownload(model.id);
+                        }
+                      }}
+                    >
+                      {isActiveDownload ? (
+                        <Spinner data-icon="inline-start" />
+                      ) : model.installed ? (
+                        <CheckCircle2Icon data-icon="inline-start" />
+                      ) : (
+                        <DownloadIcon data-icon="inline-start" />
+                      )}
+                      {model.installed
+                        ? isSelected
+                          ? "使用中"
+                          : "使用此模型"
+                        : "下載模型"}
+                    </Button>
+
+                    {model.installed ? (
+                      <Dialog
+                        open={isDeleteDialogOpen}
+                        onOpenChange={(open) =>
+                          setDeleteDialogModelId(open ? model.id : null)
+                        }
+                        disablePointerDismissal={isDeletingThisModel}
+                      >
+                        <DialogTrigger
+                          disabled={!canDeleteModel}
+                          render={
+                            <Button
+                              variant="destructive"
+                              disabled={!canDeleteModel}
+                            />
+                          }
+                        >
+                          <Trash2Icon data-icon="inline-start" />
+                          刪除
+                        </DialogTrigger>
+                        <DialogContent showCloseButton={!isDeletingThisModel}>
+                          <DialogHeader>
+                            <DialogTitle>刪除 {model.title}</DialogTitle>
+                            <DialogDescription>
+                              這會移除已下載的模型檔案；之後需重新下載才能使用此模型。
+                            </DialogDescription>
+                          </DialogHeader>
+                          <DialogFooter>
+                            <DialogClose
+                              render={<Button variant="outline" />}
+                              disabled={isDeletingThisModel}
+                            >
+                              取消
+                            </DialogClose>
+                            <Button
+                              variant="destructive"
+                              disabled={isDeletingThisModel}
+                              onClick={async () => {
+                                const deleted = await onDeleteModel(model.id);
+                                if (deleted) {
+                                  setDeleteDialogModelId(null);
+                                }
+                              }}
+                            >
+                              {isDeletingThisModel ? (
+                                <Spinner data-icon="inline-start" />
+                              ) : (
+                                <Trash2Icon data-icon="inline-start" />
+                              )}
+                              刪除模型
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    ) : null}
                   </div>
                 </div>
-                <Button
-                  variant={model.installed ? "outline" : "default"}
-                  disabled={isActiveDownload || (model.installed && isSelected)}
-                  onClick={() => {
-                    onSelectModel(model.id);
-                    if (!model.installed) {
-                      onDownload(model.id);
-                    }
-                  }}
-                >
-                  {isActiveDownload ? (
-                    <Spinner data-icon="inline-start" />
-                  ) : model.installed ? (
-                    <CheckCircle2Icon data-icon="inline-start" />
-                  ) : (
-                    <DownloadIcon data-icon="inline-start" />
-                  )}
-                  {model.installed
-                    ? isSelected
-                      ? "使用中"
-                      : "使用此模型"
-                    : "下載模型"}
-                </Button>
-              </div>
-            );
+              );
             })}
           </div>
         )}
@@ -147,7 +247,6 @@ export function ModelPanel({
             </div>
           </div>
         ) : null}
-
       </CardContent>
     </Card>
   );

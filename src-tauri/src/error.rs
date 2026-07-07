@@ -14,8 +14,6 @@ pub enum AppError {
     Model(String),
     #[error("Download error: {0}")]
     Download(String),
-    #[error("FFmpeg error: {0}")]
-    Ffmpeg(String),
     #[error("Transcription error: {0}")]
     Transcription(String),
 }

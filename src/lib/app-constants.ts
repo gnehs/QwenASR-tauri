@@ -28,12 +28,5 @@ export const audioFilters = [
 
 export const defaultOptions: OptionsState = {
   language: "auto",
-  prompt: "",
-  segmentSeconds: 30,
-  searchSeconds: 3,
-  threads: 0,
-  skipSilence: false,
-  pastText: false,
-  convertWithFfmpeg: true,
   writeSrt: true,
 };

@@ -15,13 +15,33 @@ import type {
   TranscriptionResult,
 } from "@/types/transcription";
 
+const selectedModelStorageKey = "qwenasr:selected-model-id";
+
+function readStoredSelectedModelId() {
+  try {
+    return window.localStorage.getItem(selectedModelStorageKey) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredSelectedModelId(modelId: string) {
+  try {
+    window.localStorage.setItem(selectedModelStorageKey, modelId);
+  } catch {
+    // Ignore storage failures so model selection still works in restricted webviews.
+  }
+}
+
 export function useTranscriptionWorkspace() {
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus>({
     available: false,
     version: null,
   });
-  const [selectedModelId, setSelectedModelId] = useState("");
+  const [selectedModelId, setSelectedModelId] = useState(
+    readStoredSelectedModelId,
+  );
   const [singleFile, setSingleFile] = useState("");
   const [batchFiles, setBatchFiles] = useState<string[]>([]);
   const [outputDir, setOutputDir] = useState("");
@@ -32,6 +52,7 @@ export function useTranscriptionWorkspace() {
     useState<TranscriptionProgress | null>(null);
   const [results, setResults] = useState<TranscriptionResult[]>([]);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
 
   useEffect(() => {
@@ -56,10 +77,28 @@ export function useTranscriptionWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (!selectedModelId && models.length > 0) {
+    if (models.length === 0) return;
+
+    const hasSelectedModel = models.some(
+      (model) => model.id === selectedModelId,
+    );
+
+    if (!hasSelectedModel) {
       setSelectedModelId(
         models.find((model) => model.recommended)?.id ?? models[0].id,
       );
+    }
+  }, [models, selectedModelId]);
+
+  useEffect(() => {
+    if (models.length === 0 || !selectedModelId) return;
+
+    const hasSelectedModel = models.some(
+      (model) => model.id === selectedModelId,
+    );
+
+    if (hasSelectedModel) {
+      writeStoredSelectedModelId(selectedModelId);
     }
   }, [models, selectedModelId]);
 
@@ -133,6 +172,33 @@ export function useTranscriptionWorkspace() {
     }
   }
 
+  async function deleteModel(modelId: string) {
+    if (!modelId || isDownloading || isTranscribing || deletingModelId) {
+      return false;
+    }
+
+    setDeletingModelId(modelId);
+    try {
+      const deletedModel = await invoke<ModelStatus>("delete_model", {
+        modelId,
+      });
+      setModels((current) =>
+        current.map((model) =>
+          model.id === deletedModel.id ? deletedModel : model,
+        ),
+      );
+      await refreshModels();
+      setDownloadProgress(null);
+      toast.success("模型已刪除");
+      return true;
+    } catch (error) {
+      toast.error(formatInvokeError(error));
+      return false;
+    } finally {
+      setDeletingModelId(null);
+    }
+  }
+
   async function runSingleTranscription() {
     if (!singleFile) return;
 
@@ -188,13 +254,6 @@ export function useTranscriptionWorkspace() {
     return {
       modelId: selectedModelId,
       language: options.language,
-      prompt: options.prompt,
-      segmentSeconds: options.segmentSeconds,
-      searchSeconds: options.searchSeconds,
-      skipSilence: options.skipSilence,
-      pastText: options.pastText,
-      threads: options.threads > 0 ? options.threads : null,
-      convertWithFfmpeg: options.convertWithFfmpeg,
       writeSrt: options.writeSrt,
       outputDir: outputDir || null,
     };
@@ -213,6 +272,7 @@ export function useTranscriptionWorkspace() {
     transcriptionProgress,
     results,
     isDownloading,
+    deletingModelId,
     isTranscribing,
     hasReadyModel,
     canRunSingle,
@@ -223,6 +283,7 @@ export function useTranscriptionWorkspace() {
     pickBatchFiles,
     pickOutputDir,
     downloadSelectedModel,
+    deleteModel,
     runSingleTranscription,
     runBatchTranscription,
     removeBatchFile,

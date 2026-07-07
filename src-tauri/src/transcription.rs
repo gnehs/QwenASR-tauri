@@ -2,10 +2,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use qwen_asr::{config::SAMPLE_RATE, context::QwenCtx, kernels, transcribe};
+use qwen3_asr::{
+    inference::{AsrInference, TranscribeResult as QwenTranscribeResult},
+    tensor::Device,
+};
 use tauri::{AppHandle, Emitter};
 
-use crate::audio::load_audio_samples;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     TranscribeBatchRequest, TranscribeFileRequest, TranscribeOptions, TranscriptSegment,
@@ -15,6 +17,41 @@ use crate::paths::{model_dir, model_status};
 use crate::srt;
 
 const TRANSCRIPTION_PROGRESS_EVENT: &str = "transcription-progress";
+const TARGET_SRT_CHARS: usize = 42;
+const MAX_SRT_CHARS: usize = 72;
+const MIN_SEGMENT_MS: u64 = 900;
+const ASR_LANGUAGES: &[&str] = &[
+    "Cantonese",
+    "Macedonian",
+    "Portuguese",
+    "Indonesian",
+    "Vietnamese",
+    "Romanian",
+    "Hungarian",
+    "Filipino",
+    "Chinese",
+    "English",
+    "German",
+    "French",
+    "Spanish",
+    "Italian",
+    "Russian",
+    "Turkish",
+    "Swedish",
+    "Danish",
+    "Finnish",
+    "Polish",
+    "Arabic",
+    "Korean",
+    "Japanese",
+    "Persian",
+    "Greek",
+    "Czech",
+    "Hindi",
+    "Malay",
+    "Dutch",
+    "Thai",
+];
 
 pub fn transcribe_file(
     app: AppHandle,
@@ -77,11 +114,11 @@ fn transcribe_file_inner(
         None,
     );
 
-    let mut ctx = build_context(&model_path, &request.options)?;
+    let engine = load_engine(&model_path)?;
     let result = transcribe_with_context(
         app,
         started,
-        &mut ctx,
+        &engine,
         &request.audio_path,
         &request.options,
         1,
@@ -158,7 +195,7 @@ pub fn transcribe_batch(
         None,
     );
 
-    let mut ctx = build_context(&model_path, &request.options)?;
+    let engine = load_engine(&model_path)?;
     let total = request.audio_paths.len();
     let mut results = Vec::with_capacity(total);
 
@@ -170,7 +207,7 @@ pub fn transcribe_batch(
         let result = match transcribe_with_context(
             &app,
             started,
-            &mut ctx,
+            &engine,
             audio_path,
             &request.options,
             file_index,
@@ -281,21 +318,6 @@ fn estimate_eta(started: Instant, percent: f64) -> Option<u128> {
     Some(remaining.max(0.0).round() as u128)
 }
 
-fn estimate_eta_from_audio(started: Instant, percent: f64, audio_ms: u128) -> Option<u128> {
-    let progress_eta = estimate_eta(started, percent);
-    if audio_ms < 1_000 {
-        return progress_eta;
-    }
-
-    let elapsed_ms = started.elapsed().as_millis();
-    let audio_floor = (audio_ms / 3).saturating_sub(elapsed_ms);
-    if audio_floor == 0 {
-        return progress_eta;
-    }
-
-    Some(progress_eta.map_or(audio_floor, |eta| eta.max(audio_floor)))
-}
-
 fn ensure_model(model_id: &str) -> AppResult<PathBuf> {
     let status = model_status(model_id)?;
     if !status.installed {
@@ -308,58 +330,36 @@ fn ensure_model(model_id: &str) -> AppResult<PathBuf> {
     model_dir(model_id)
 }
 
-fn build_context(model_path: &Path, options: &TranscribeOptions) -> AppResult<QwenCtx> {
-    let threads = options
-        .threads
-        .filter(|threads| *threads > 0)
-        .unwrap_or_else(|| {
-            std::thread::available_parallelism()
-                .map(|count| count.get().min(8))
-                .unwrap_or(4)
-        });
-    kernels::set_threads(threads);
-    kernels::set_verbose(0);
-
-    let model_path_string = model_path.to_string_lossy().to_string();
-    let mut ctx = QwenCtx::load(&model_path_string).ok_or_else(|| {
+fn load_engine(model_path: &Path) -> AppResult<AsrInference> {
+    AsrInference::load(model_path, default_device()).map_err(|error| {
         AppError::Model(format!(
-            "Failed to load model from {}",
+            "Failed to load model from {}: {error}",
             model_path.display()
         ))
-    })?;
+    })
+}
 
-    ctx.segment_sec = options.segment_seconds.max(1.0);
-    ctx.search_sec = options.search_seconds.max(0.25);
-    ctx.skip_silence = options.skip_silence;
-    ctx.past_text_conditioning = options.past_text;
-
-    if let Some(prompt) = options
-        .prompt
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
+fn default_device() -> Device {
+    #[cfg(target_os = "macos")]
     {
-        ctx.set_prompt(prompt)
-            .map_err(|_| AppError::Model("Failed to set the prompt.".into()))?;
+        qwen3_asr::backend::mlx::stream::init_mlx(true);
+        Device::Gpu(0)
     }
 
-    if let Some(language) = options
-        .language
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty() && *value != "auto")
+    #[cfg(not(target_os = "macos"))]
     {
-        ctx.set_force_language(language)
-            .map_err(|_| AppError::Model(format!("Unsupported language: {language}")))?;
+        if tch::Cuda::is_available() {
+            Device::Gpu(0)
+        } else {
+            Device::Cpu
+        }
     }
-
-    Ok(ctx)
 }
 
 fn transcribe_with_context(
     app: &AppHandle,
     progress_started: Instant,
-    ctx: &mut QwenCtx,
+    engine: &AsrInference,
     audio_path: &str,
     options: &TranscribeOptions,
     file_index: usize,
@@ -382,9 +382,7 @@ fn transcribe_with_context(
         None,
     );
 
-    let samples = load_audio_samples(audio_path, options.convert_with_ffmpeg)?;
-    let audio_ms = (samples.len() as f64 / SAMPLE_RATE as f64 * 1000.0).round() as u128;
-    let inference_percent = progress_between(range_start, range_end, 0.35);
+    let inference_percent = progress_between(range_start, range_end, 0.25);
     emit_progress(
         app,
         progress_started,
@@ -396,11 +394,16 @@ fn transcribe_with_context(
         file_index,
         total_files,
         inference_percent,
-        estimate_eta_from_audio(progress_started, inference_percent, audio_ms),
+        None,
     );
 
-    let raw_segments = transcribe::transcribe_segmented(ctx, &samples)
-        .ok_or_else(|| AppError::Transcription("QwenASR failed to transcribe this file.".into()))?;
+    let language = normalize_language(options.language.as_deref());
+    let language_forced = language.is_some();
+    let raw_result = engine
+        .transcribe(audio_path, language.as_deref())
+        .map_err(|error| {
+            AppError::Transcription(format!("Qwen3-ASR failed to transcribe this file: {error}"))
+        })?;
 
     let finalize_percent = progress_between(range_start, range_end, 0.88);
     emit_progress(
@@ -425,20 +428,9 @@ fn transcribe_with_context(
         None,
     );
 
-    let segments = raw_segments
-        .into_iter()
-        .map(|segment| TranscriptSegment {
-            start_ms: segment.start_ms,
-            end_ms: segment.end_ms,
-            text: segment.text,
-        })
-        .collect::<Vec<_>>();
-    let text = segments
-        .iter()
-        .map(|segment| segment.text.trim())
-        .filter(|text| !text.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = normalize_asr_text(&raw_result, language_forced);
+    let audio_ms = (raw_result.duration_seconds.max(0.0) * 1000.0).round() as u64;
+    let segments = build_approximate_segments(&text, audio_ms);
     let srt_path = if options.write_srt {
         Some(write_srt(audio_path, options, &segments)?)
     } else {
@@ -466,6 +458,298 @@ fn transcribe_with_context(
         srt_path,
         duration_ms: started.elapsed().as_millis(),
     })
+}
+
+fn normalize_language(language: Option<&str>) -> Option<String> {
+    language
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))
+        .map(|value| value.to_lowercase())
+}
+
+fn normalize_asr_text(result: &QwenTranscribeResult, language_forced: bool) -> String {
+    let text = if language_forced {
+        result.text.trim()
+    } else {
+        parse_auto_asr_text(&result.raw_output).unwrap_or_else(|| result.text.trim())
+    };
+
+    collapse_spaced_acronyms(text)
+}
+
+fn parse_auto_asr_text(raw: &str) -> Option<&str> {
+    let rest = raw.trim().strip_prefix("language ")?;
+    for language in ASR_LANGUAGES {
+        if let Some(text) = rest.strip_prefix(language) {
+            let text = text.trim_start();
+            let text = text.strip_prefix("<asr_text>").unwrap_or(text);
+            return Some(text.trim());
+        }
+    }
+    None
+}
+
+fn collapse_spaced_acronyms(text: &str) -> String {
+    let chars = text.chars().collect::<Vec<_>>();
+    let mut output = String::with_capacity(text.len());
+    let mut index = 0;
+
+    while index < chars.len() {
+        if chars[index].is_ascii_uppercase() {
+            let mut end = index + 1;
+            while end + 1 < chars.len() && chars[end] == ' ' && chars[end + 1].is_ascii_uppercase()
+            {
+                end += 2;
+            }
+
+            if end > index + 1 {
+                let mut letter_index = index;
+                while letter_index < end {
+                    output.push(chars[letter_index]);
+                    letter_index += 2;
+                }
+                index = end;
+                continue;
+            }
+        }
+
+        output.push(chars[index]);
+        index += 1;
+    }
+
+    output
+}
+
+fn build_approximate_segments(text: &str, audio_ms: u64) -> Vec<TranscriptSegment> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Vec::new();
+    }
+
+    let audio_ms = audio_ms.max(1);
+    let mut units = split_transcript_units(text);
+    if units.is_empty() {
+        return Vec::new();
+    }
+    units = limit_segment_count(units, audio_ms);
+
+    let total_weight = units
+        .iter()
+        .map(|unit| weighted_char_count(unit))
+        .sum::<usize>()
+        .max(1);
+    let mut cursor_ms = 0u64;
+    let mut segments = Vec::with_capacity(units.len());
+
+    for (index, unit) in units.iter().enumerate() {
+        let remaining_segments = units.len() - index;
+        let remaining_ms = audio_ms.saturating_sub(cursor_ms).max(1);
+        let end_ms = if remaining_segments == 1 {
+            audio_ms.max(cursor_ms + 1)
+        } else {
+            let dynamic_min = (remaining_ms / remaining_segments as u64)
+                .max(1)
+                .min(MIN_SEGMENT_MS);
+            let reserved_ms = dynamic_min.saturating_mul((remaining_segments - 1) as u64);
+            let max_duration = remaining_ms.saturating_sub(reserved_ms).max(1);
+            let proportional = ((audio_ms as f64) * (weighted_char_count(unit) as f64)
+                / (total_weight as f64))
+                .round() as u64;
+            cursor_ms + proportional.max(dynamic_min).min(max_duration)
+        };
+
+        segments.push(TranscriptSegment {
+            start_ms: cursor_ms,
+            end_ms,
+            text: unit.clone(),
+        });
+        cursor_ms = end_ms;
+    }
+
+    segments
+}
+
+fn split_transcript_units(text: &str) -> Vec<String> {
+    let mut units = Vec::new();
+    let mut current = String::new();
+    let mut current_chars = 0usize;
+
+    for character in text.chars() {
+        if matches!(character, '\n' | '\r') {
+            push_segment_unit(&mut units, &mut current, &mut current_chars);
+            continue;
+        }
+
+        if character.is_whitespace() {
+            if !current.ends_with(' ') && !current.is_empty() {
+                current.push(' ');
+            }
+            continue;
+        }
+
+        current.push(character);
+        current_chars += 1;
+
+        let should_split = is_hard_boundary(character)
+            || (is_soft_boundary(character) && current_chars >= TARGET_SRT_CHARS)
+            || current_chars >= MAX_SRT_CHARS;
+
+        if should_split {
+            push_segment_unit(&mut units, &mut current, &mut current_chars);
+        }
+    }
+
+    push_segment_unit(&mut units, &mut current, &mut current_chars);
+    units
+}
+
+fn limit_segment_count(units: Vec<String>, audio_ms: u64) -> Vec<String> {
+    let max_segments = usize::try_from(audio_ms).unwrap_or(usize::MAX).max(1);
+    if units.len() <= max_segments {
+        return units;
+    }
+
+    let total_units = units.len();
+    let mut merged = vec![String::new(); max_segments];
+    for (index, unit) in units.into_iter().enumerate() {
+        let bucket = (index * max_segments) / total_units;
+        merged[bucket].push_str(&unit);
+    }
+
+    merged
+        .into_iter()
+        .filter(|unit| !unit.trim().is_empty())
+        .collect()
+}
+
+fn push_segment_unit(units: &mut Vec<String>, current: &mut String, current_chars: &mut usize) {
+    let unit = current.trim();
+    if !unit.is_empty() {
+        units.push(unit.to_string());
+    }
+    current.clear();
+    *current_chars = 0;
+}
+
+fn is_hard_boundary(character: char) -> bool {
+    matches!(
+        character,
+        '。' | '！' | '？' | '!' | '?' | '；' | ';' | '\n'
+    )
+}
+
+fn is_soft_boundary(character: char) -> bool {
+    matches!(character, '，' | ',' | '、' | '：' | ':')
+}
+
+fn weighted_char_count(text: &str) -> usize {
+    text.chars()
+        .filter(|character| !character.is_whitespace())
+        .count()
+        .max(1)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_auto_language_without_eating_text_prefix() {
+        let raw = "language ChineseAI幫你股票賺了很多錢嗎？";
+
+        assert_eq!(parse_auto_asr_text(raw), Some("AI幫你股票賺了很多錢嗎？"));
+    }
+
+    #[test]
+    fn parses_auto_language_with_asr_text_marker() {
+        let raw = "language Chinese<asr_text>AI幫你股票賺了很多錢嗎？";
+
+        assert_eq!(parse_auto_asr_text(raw), Some("AI幫你股票賺了很多錢嗎？"));
+    }
+
+    #[test]
+    fn collapses_spaced_acronyms() {
+        assert_eq!(
+            collapse_spaced_acronyms("A I客服和S A P系統"),
+            "AI客服和SAP系統"
+        );
+    }
+
+    #[test]
+    fn normalizes_auto_result_from_raw_output() {
+        let result = QwenTranscribeResult {
+            text: "I幫你股票賺了很多錢嗎？".into(),
+            language: "ChineseA".into(),
+            raw_output: "language ChineseA I幫你股票賺了很多錢嗎？".into(),
+            duration_seconds: 1.0,
+        };
+
+        assert_eq!(
+            normalize_asr_text(&result, false),
+            "AI幫你股票賺了很多錢嗎？"
+        );
+    }
+
+    #[test]
+    fn splits_transcript_text_into_readable_units() {
+        let units = split_transcript_units(
+            "AI幫你股票賺了很多錢嗎？我們今天討論風險控管，還有資產配置。最後看實際案例。",
+        );
+
+        assert_eq!(
+            units,
+            vec![
+                "AI幫你股票賺了很多錢嗎？",
+                "我們今天討論風險控管，還有資產配置。",
+                "最後看實際案例。"
+            ]
+        );
+    }
+
+    #[test]
+    fn approximate_segments_cover_audio_with_monotonic_ranges() {
+        let text = "AI幫你股票賺了很多錢嗎？我們今天討論風險控管，還有資產配置。最後看實際案例。";
+        let segments = build_approximate_segments(text, 10_000);
+
+        assert!(segments.len() > 1);
+        assert_eq!(segments.first().map(|segment| segment.start_ms), Some(0));
+        assert_eq!(segments.last().map(|segment| segment.end_ms), Some(10_000));
+
+        for pair in segments.windows(2) {
+            assert!(pair[0].end_ms > pair[0].start_ms);
+            assert_eq!(pair[0].end_ms, pair[1].start_ms);
+        }
+
+        let rebuilt = segments
+            .iter()
+            .map(|segment| segment.text.as_str())
+            .collect::<String>();
+        assert_eq!(rebuilt, text);
+    }
+
+    #[test]
+    fn approximate_segments_keep_short_audio_ranges_valid() {
+        let segments =
+            build_approximate_segments("第一句。第二句。第三句。第四句。第五句。", 1_000);
+
+        assert_eq!(segments.first().map(|segment| segment.start_ms), Some(0));
+        assert_eq!(segments.last().map(|segment| segment.end_ms), Some(1_000));
+        assert!(segments
+            .iter()
+            .all(|segment| segment.end_ms > segment.start_ms));
+    }
+
+    #[test]
+    fn approximate_segments_merge_when_audio_is_too_short_for_unit_count() {
+        let segments = build_approximate_segments("第一句。第二句。第三句。第四句。第五句。", 3);
+
+        assert_eq!(segments.len(), 3);
+        assert_eq!(segments.first().map(|segment| segment.start_ms), Some(0));
+        assert_eq!(segments.last().map(|segment| segment.end_ms), Some(3));
+        assert!(segments
+            .iter()
+            .all(|segment| segment.end_ms > segment.start_ms));
+    }
 }
 
 fn write_srt(

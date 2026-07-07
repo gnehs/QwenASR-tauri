@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fs, io::ErrorKind, path::PathBuf};
 
 use crate::error::{AppError, AppResult};
 use crate::models::{find_known_model, ModelStatus};
@@ -40,4 +40,29 @@ pub fn model_status(model_id: &str) -> AppResult<ModelStatus> {
         files: model.files.iter().map(|file| (*file).to_string()).collect(),
         missing_files,
     })
+}
+
+pub fn delete_model(model_id: &str) -> AppResult<ModelStatus> {
+    let model = find_known_model(model_id)
+        .ok_or_else(|| AppError::Model(format!("Unknown model: {model_id}")))?;
+    let path = model_dir(model.id)?;
+
+    if !path.exists() {
+        return model_status(model.id);
+    }
+
+    if !path.is_dir() {
+        return Err(AppError::Model(format!(
+            "Model path is not a directory: {}",
+            path.display()
+        )));
+    }
+
+    match fs::remove_dir_all(&path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+
+    model_status(model.id)
 }

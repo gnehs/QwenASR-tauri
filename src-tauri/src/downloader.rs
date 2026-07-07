@@ -5,10 +5,16 @@ use std::time::Instant;
 use hf_hub::progress::{DownloadEvent, FileStatus, ProgressEvent, ProgressHandler};
 use hf_hub::HFClientSync;
 use tauri::{AppHandle, Emitter};
+use tokenizers::{
+    decoders::byte_level::ByteLevel as ByteLevelDecoder, models::bpe::BPE,
+    pre_tokenizers::byte_level::ByteLevel, Tokenizer,
+};
 
 use crate::error::{AppError, AppResult};
-use crate::models::{find_known_model, DownloadProgress};
+use crate::models::{find_known_model, DownloadProgress, KnownModel};
 use crate::paths::{model_dir, model_status};
+
+const TOKENIZER_JSON: &str = "tokenizer.json";
 
 pub fn download_model(app: AppHandle, model_id: String) -> AppResult<crate::models::ModelStatus> {
     let model = find_known_model(&model_id)
@@ -61,6 +67,41 @@ pub fn download_model(app: AppHandle, model_id: String) -> AppResult<crate::mode
             continue;
         }
 
+        if *file == TOKENIZER_JSON {
+            emit_progress(
+                &app,
+                DownloadProgress {
+                    model_id: model.id.to_string(),
+                    state: "generating".into(),
+                    current_file: Some((*file).to_string()),
+                    file_index: index + 1,
+                    total_files,
+                    file_bytes_completed: 0,
+                    file_total_bytes: 1,
+                    speed_bytes_per_sec: 0.0,
+                    percent: 0.0,
+                    message: "Generating tokenizer.json".into(),
+                },
+            );
+            generate_tokenizer_json(model, &dir)?;
+            emit_progress(
+                &app,
+                DownloadProgress {
+                    model_id: model.id.to_string(),
+                    state: "fileComplete".into(),
+                    current_file: Some((*file).to_string()),
+                    file_index: index + 1,
+                    total_files,
+                    file_bytes_completed: 1,
+                    file_total_bytes: 1,
+                    speed_bytes_per_sec: 0.0,
+                    percent: 100.0,
+                    message: "Generated tokenizer.json".into(),
+                },
+            );
+            continue;
+        }
+
         let progress = hf_hub::progress::Progress::new(TauriProgressHandler::new(
             app.clone(),
             model.id,
@@ -94,6 +135,34 @@ pub fn download_model(app: AppHandle, model_id: String) -> AppResult<crate::mode
     );
 
     model_status(model.id)
+}
+
+fn generate_tokenizer_json(model: KnownModel, dir: &std::path::Path) -> AppResult<()> {
+    let vocab_path = dir.join("vocab.json");
+    let merges_path = dir.join("merges.txt");
+    let tokenizer_path = dir.join(TOKENIZER_JSON);
+
+    if !vocab_path.exists() || !merges_path.exists() {
+        return Err(AppError::Download(format!(
+            "Cannot generate tokenizer.json for {} before vocab.json and merges.txt are downloaded.",
+            model.title
+        )));
+    }
+
+    let vocab = vocab_path.to_string_lossy();
+    let merges = merges_path.to_string_lossy();
+    let bpe = BPE::from_file(vocab.as_ref(), merges.as_ref())
+        .build()
+        .map_err(|error| AppError::Download(format!("Failed to build BPE tokenizer: {error}")))?;
+    let mut tokenizer = Tokenizer::new(bpe);
+    tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
+    tokenizer.with_decoder(Some(ByteLevelDecoder::default()));
+
+    tokenizer
+        .save(&tokenizer_path, false)
+        .map_err(|error| AppError::Download(format!("Failed to save tokenizer.json: {error}")))?;
+
+    Ok(())
 }
 
 struct TauriProgressHandler {
