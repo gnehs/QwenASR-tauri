@@ -4082,6 +4082,7 @@ version = "0.1.0"
 dependencies = [
  "dirs",
  "hf-hub",
+ "hound",
  "opencc-rs",
  "qwen3_asr",
  "serde",

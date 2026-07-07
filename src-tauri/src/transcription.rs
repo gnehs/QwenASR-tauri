@@ -10,6 +10,7 @@ use qwen3_asr::{
 };
 use tauri::{AppHandle, Emitter};
 
+use crate::audio;
 use crate::error::{AppError, AppResult};
 use crate::models::{
     TranscribeBatchRequest, TranscribeFileRequest, TranscribeOptions, TranscriptSegment,
@@ -382,6 +383,7 @@ fn default_device() -> Device {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn transcribe_with_context(
     app: &AppHandle,
     progress_started: Instant,
@@ -408,6 +410,7 @@ fn transcribe_with_context(
         None,
     );
 
+    let prepared_audio = audio::prepare_audio_for_asr(audio_path)?;
     let inference_percent = progress_between(range_start, range_end, 0.25);
     emit_progress(
         app,
@@ -425,8 +428,11 @@ fn transcribe_with_context(
 
     let language = normalize_language(options.language.as_deref());
     let language_forced = language.is_some();
+    let inference_audio_path = prepared_audio.inference_path().to_str().ok_or_else(|| {
+        AppError::Transcription("Prepared audio path contains unsupported characters.".into())
+    })?;
     let raw_result = engine
-        .transcribe(audio_path, language.as_deref())
+        .transcribe(inference_audio_path, language.as_deref())
         .map_err(|error| {
             AppError::Transcription(format!("Qwen3-ASR failed to transcribe this file: {error}"))
         })?;
@@ -622,9 +628,7 @@ fn build_approximate_segments(text: &str, audio_ms: u64) -> Vec<TranscriptSegmen
         let end_ms = if remaining_segments == 1 {
             audio_ms.max(cursor_ms + 1)
         } else {
-            let dynamic_min = (remaining_ms / remaining_segments as u64)
-                .max(1)
-                .min(MIN_SEGMENT_MS);
+            let dynamic_min = (remaining_ms / remaining_segments as u64).clamp(1, MIN_SEGMENT_MS);
             let reserved_ms = dynamic_min.saturating_mul((remaining_segments - 1) as u64);
             let max_duration = remaining_ms.saturating_sub(reserved_ms).max(1);
             let proportional = ((audio_ms as f64) * (weighted_char_count(unit) as f64)
