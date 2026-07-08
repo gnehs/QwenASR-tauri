@@ -24,7 +24,9 @@ const TRANSCRIPTION_PROGRESS_EVENT: &str = "transcription-progress";
 const TARGET_SRT_CHARS: usize = 42;
 const MAX_SRT_CHARS: usize = 72;
 const MIN_SEGMENT_MS: u64 = 900;
+const CHINESE_ASR_LANGUAGE: &str = "Chinese";
 const TRADITIONAL_CHINESE_LANGUAGE: &str = "chinese";
+const SIMPLIFIED_CHINESE_LANGUAGE: &str = "chinese (simplified)";
 const TRANSCRIBE_PHASE_START: f64 = 0.22;
 const TRANSCRIBE_PHASE_END: f64 = 0.84;
 const VAD_PHASE_START: f64 = 0.12;
@@ -586,8 +588,9 @@ fn transcribe_with_context(
         }),
     );
 
-    let language = normalize_language(options.language.as_deref());
-    let language_forced = language.is_some();
+    let output_language = normalize_output_language(options.language.as_deref());
+    let asr_language = normalize_asr_language(output_language.as_deref());
+    let language_forced = asr_language.is_some();
 
     for (index, chunk) in chunks.iter().enumerate() {
         let chunk_index = index + 1;
@@ -619,7 +622,7 @@ fn transcribe_with_context(
             AppError::Transcription("Chunk audio path contains unsupported characters.".into())
         })?;
         let raw_result = engine
-            .transcribe(chunk_audio_path, language.as_deref())
+            .transcribe(chunk_audio_path, asr_language.as_deref())
             .map_err(|error| {
                 AppError::Transcription(format!(
                     "Qwen3-ASR failed to transcribe chunk {chunk_index}/{total_chunks}: {error}"
@@ -627,7 +630,7 @@ fn transcribe_with_context(
             })?;
 
         let chunk_text = normalize_asr_text(&raw_result, language_forced);
-        let chunk_text = convert_text_for_output_language(chunk_text, language.as_deref())?;
+        let chunk_text = convert_text_for_output_language(chunk_text, output_language.as_deref())?;
         if !chunk_text.trim().is_empty() {
             segments.extend(build_approximate_segments_with_offset(
                 &chunk_text,
@@ -728,11 +731,24 @@ fn write_chunk_audio(samples: &[i16], chunk: AudioRange) -> AppResult<audio::Pre
     audio::write_temp_asr_wav(&samples[chunk.start_sample..chunk.end_sample])
 }
 
-fn normalize_language(language: Option<&str>) -> Option<String> {
+fn normalize_output_language(language: Option<&str>) -> Option<String> {
     language
         .map(str::trim)
         .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))
         .map(str::to_string)
+}
+
+fn normalize_asr_language(output_language: Option<&str>) -> Option<String> {
+    output_language
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !value.eq_ignore_ascii_case("auto"))
+        .map(|value| {
+            if is_simplified_chinese_output_language(value) {
+                CHINESE_ASR_LANGUAGE.to_string()
+            } else {
+                value.to_string()
+            }
+        })
 }
 
 fn normalize_asr_text(result: &QwenTranscribeResult, language_forced: bool) -> String {
@@ -759,6 +775,12 @@ fn should_convert_to_traditional_chinese(language: Option<&str>) -> bool {
             .trim()
             .eq_ignore_ascii_case(TRADITIONAL_CHINESE_LANGUAGE)
     })
+}
+
+fn is_simplified_chinese_output_language(language: &str) -> bool {
+    language
+        .trim()
+        .eq_ignore_ascii_case(SIMPLIFIED_CHINESE_LANGUAGE)
 }
 
 fn convert_simplified_to_traditional_chinese(text: &str) -> AppResult<String> {
@@ -1038,6 +1060,9 @@ mod tests {
     fn detects_chinese_language_for_traditional_conversion() {
         assert!(should_convert_to_traditional_chinese(Some("Chinese")));
         assert!(should_convert_to_traditional_chinese(Some(" chinese ")));
+        assert!(!should_convert_to_traditional_chinese(Some(
+            "Chinese (Simplified)"
+        )));
         assert!(!should_convert_to_traditional_chinese(Some("auto")));
         assert!(!should_convert_to_traditional_chinese(Some("English")));
         assert!(!should_convert_to_traditional_chinese(None));
@@ -1046,9 +1071,22 @@ mod tests {
     #[test]
     fn preserves_official_language_hint_casing() {
         assert_eq!(
-            normalize_language(Some(" Cantonese (Hong Kong accent) ")).as_deref(),
+            normalize_output_language(Some(" Cantonese (Hong Kong accent) ")).as_deref(),
             Some("Cantonese (Hong Kong accent)")
         );
+    }
+
+    #[test]
+    fn maps_simplified_chinese_output_to_official_asr_language() {
+        assert_eq!(
+            normalize_asr_language(Some("Chinese (Simplified)")).as_deref(),
+            Some("Chinese")
+        );
+        assert_eq!(
+            normalize_asr_language(Some(" Cantonese (Hong Kong accent) ")).as_deref(),
+            Some("Cantonese (Hong Kong accent)")
+        );
+        assert_eq!(normalize_asr_language(None), None);
     }
 
     #[test]
@@ -1063,6 +1101,15 @@ mod tests {
     fn skips_conversion_for_non_chinese_output_language() {
         assert_eq!(
             convert_text_for_output_language("汉语转换".into(), Some("English")).unwrap(),
+            "汉语转换"
+        );
+    }
+
+    #[test]
+    fn skips_conversion_for_simplified_chinese_output_language() {
+        assert_eq!(
+            convert_text_for_output_language("汉语转换".into(), Some("Chinese (Simplified)"))
+                .unwrap(),
             "汉语转换"
         );
     }

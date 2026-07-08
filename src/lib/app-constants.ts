@@ -3,6 +3,7 @@ import type { OptionsState, SelectOption } from "@/types/transcription";
 export const languageItems: SelectOption[] = [
   { label: "自動偵測", value: "auto" },
   { label: "繁體中文 / Chinese", value: "Chinese" },
+  { label: "簡體中文 / Simplified Chinese", value: "Chinese (Simplified)" },
   { label: "English", value: "English" },
   { label: "粵語 / Cantonese", value: "Cantonese" },
   { label: "阿拉伯文 / Arabic", value: "Arabic" },
