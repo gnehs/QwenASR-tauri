@@ -552,6 +552,28 @@
   border-radius: var(--radius-lg);
 }
 
+.tool-install-hint {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  padding: 8px 10px;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.tool-install-hint code {
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  padding: 2px 6px;
+  color: var(--foreground);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.8125rem;
+}
+
 .result-row {
   display: flex;
   min-width: 0;

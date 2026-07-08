@@ -37,6 +37,12 @@ export function RuntimePanel({ ffmpeg }: { ffmpeg: FfmpegStatus }) {
             <p className="text-sm text-muted-foreground">
               非 WAV 音訊、影片檔或不符合 16 kHz mono 的 WAV 會透過 FFmpeg 正規化後再送入 QwenASR。
             </p>
+            {!ffmpeg.available ? (
+              <div className="tool-install-hint">
+                <span>請在終端機安裝：</span>
+                <code>brew install ffmpeg</code>
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </div>

@@ -5,6 +5,7 @@
   "identifier": "com.gnehs.qwenasr-tauri",
   "build": {
     "beforeDevCommand": "pnpm dev",
+    "beforeBundleCommand": "pnpm run tauri:prepare-mlx",
     "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist"
@@ -17,6 +18,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "macOS": {
+      "files": {
+        "MacOS/mlx.metallib": "resources/mlx.metallib"
+      }
+    },
     "resources": [
       "Assets.car"
     ],

@@ -15,6 +15,8 @@ pub const ASR_SAMPLE_RATE: u32 = 16_000;
 const MIN_ASR_SAMPLES: u32 = 320;
 const TEMP_AUDIO_DIR: &str = "qwenasr-tauri";
 const FFMPEG_COMMAND: &str = "ffmpeg";
+const FFMPEG_INSTALL_HINT: &str =
+    "未偵測到 FFmpeg。請在終端機執行 `brew install ffmpeg` 後重開 QwenASR Studio。";
 
 #[cfg(target_os = "macos")]
 const MACOS_FFMPEG_PATHS: &[&str] = &[
@@ -68,9 +70,7 @@ pub fn prepare_audio_for_asr(audio_path: &str) -> AppResult<PreparedAudio> {
 
     match normalize_with_ffmpeg(&original_path) {
         Ok(normalized_path) => Ok(PreparedAudio::new(normalized_path)),
-        Err(FfmpegError::Unavailable) => Err(AppError::Transcription(
-            "FFmpeg is required to normalize audio before transcription. Install FFmpeg and try again.".into(),
-        )),
+        Err(FfmpegError::Unavailable) => Err(AppError::Transcription(FFMPEG_INSTALL_HINT.into())),
         Err(FfmpegError::Failed(message)) => Err(AppError::Transcription(message)),
     }
 }
