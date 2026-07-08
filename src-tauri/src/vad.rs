@@ -1,4 +1,11 @@
-use std::io::Cursor;
+use std::{
+    io::Cursor,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
+    thread,
+};
 
 use rustfft::{num_complex::Complex32, FftPlanner};
 use serde::Deserialize;
@@ -6,6 +13,8 @@ use tract_onnx::prelude::*;
 
 use crate::audio;
 use crate::error::{AppError, AppResult};
+
+type VadOnnxModel = TypedRunnableModel<TypedModel>;
 
 const MODEL_ONNX: &[u8] = include_bytes!("../resources/firered-vad-onnx/model.onnx");
 const CMVN_JSON: &str = include_str!("../resources/firered-vad-onnx/cmvn.json");
@@ -19,6 +28,7 @@ const N_FFT: usize = 512;
 const PRE_EMPHASIS: f32 = 0.97;
 const ONNX_WINDOW_FRAMES: usize = 1_500;
 const ONNX_OVERLAP_FRAMES: usize = 100;
+const MAX_ONNX_INFERENCE_WORKERS: usize = 4;
 
 const SPEECH_THRESHOLD: f32 = 0.4;
 const SMOOTH_WINDOW_SIZE: usize = 5;
@@ -183,20 +193,20 @@ where
     let fft = planner.plan_fft_forward(N_FFT);
     let mut features = Vec::with_capacity(frame_count * NUM_MEL_BINS);
     let progress_step = (frame_count / 40).max(1);
+    let mut spectrum = vec![Complex32::new(0.0, 0.0); N_FFT];
+    let mut power = vec![0.0f32; N_FFT / 2 + 1];
 
     for frame_index in 0..frame_count {
         let start = frame_index * frame_shift;
-        let mut spectrum = vec![Complex32::new(0.0, 0.0); N_FFT];
+        spectrum.fill(Complex32::new(0.0, 0.0));
         for offset in 0..frame_len {
             spectrum[offset].re = preemphasized[start + offset] * window[offset];
         }
 
         fft.process(&mut spectrum);
-        let power = spectrum
-            .iter()
-            .take(N_FFT / 2 + 1)
-            .map(|bin| bin.re * bin.re + bin.im * bin.im)
-            .collect::<Vec<_>>();
+        for (power_bin, spectrum_bin) in power.iter_mut().zip(spectrum.iter()) {
+            *power_bin = spectrum_bin.re * spectrum_bin.re + spectrum_bin.im * spectrum_bin.im;
+        }
 
         for mel_index in 0..NUM_MEL_BINS {
             let mel_energy = mel_filterbank[mel_index]
@@ -231,8 +241,37 @@ where
 {
     emit_vad_progress(progress, 0.76, "載入 FireRedVAD ONNX");
 
+    let model = Arc::new(load_onnx_model()?);
+
+    emit_vad_progress(progress, 0.86, "執行 FireRedVAD 推論");
+
+    let FbankFeatures {
+        frame_count,
+        values,
+    } = features;
+    let windows = onnx_windows(frame_count);
+    let worker_count = onnx_worker_count(windows.len());
+
+    let probabilities = if worker_count == 1 {
+        run_onnx_sequential(model.as_ref(), &values, frame_count, &windows, progress)?
+    } else {
+        run_onnx_parallel(
+            model,
+            &values,
+            frame_count,
+            &windows,
+            worker_count,
+            progress,
+        )?
+    };
+
+    emit_vad_progress(progress, 0.93, "解讀 FireRedVAD 推論結果");
+    Ok(probabilities)
+}
+
+fn load_onnx_model() -> AppResult<VadOnnxModel> {
     let mut model_bytes = Cursor::new(MODEL_ONNX);
-    let model = tract_onnx::onnx()
+    tract_onnx::onnx()
         .model_for_read(&mut model_bytes)
         .map_err(|error| AppError::Transcription(format!("FireRedVAD ONNX load failed: {error}")))?
         .into_optimized()
@@ -242,49 +281,23 @@ where
         .into_runnable()
         .map_err(|error| {
             AppError::Transcription(format!("FireRedVAD ONNX compilation failed: {error}"))
-        })?;
+        })
+}
 
-    emit_vad_progress(progress, 0.86, "執行 FireRedVAD 推論");
-
-    let FbankFeatures {
-        frame_count,
-        values,
-    } = features;
+fn run_onnx_sequential<F>(
+    model: &VadOnnxModel,
+    values: &[f32],
+    frame_count: usize,
+    windows: &[OnnxWindow],
+    progress: &mut F,
+) -> AppResult<Vec<f32>>
+where
+    F: FnMut(VadProgress),
+{
     let mut probabilities = vec![0.0f32; frame_count];
-    for window in onnx_windows(frame_count) {
-        let window_frames = window.input_end - window.input_start;
-        let feature_start = window.input_start * NUM_MEL_BINS;
-        let feature_end = window.input_end * NUM_MEL_BINS;
-        let input = tract_ndarray::Array3::from_shape_vec(
-            (1, window_frames, NUM_MEL_BINS),
-            values[feature_start..feature_end].to_vec(),
-        )
-        .map_err(|error| {
-            AppError::Transcription(format!("FireRedVAD input shape failed: {error}"))
-        })?;
-        let outputs = model
-            .run(tvec!(input.into_tensor().into()))
-            .map_err(|error| {
-                AppError::Transcription(format!("FireRedVAD ONNX inference failed: {error}"))
-            })?;
-        let output = outputs[0].to_array_view::<f32>().map_err(|error| {
-            AppError::Transcription(format!("FireRedVAD output decode failed: {error}"))
-        })?;
-        let window_probabilities = output.iter().copied().collect::<Vec<_>>();
-        if window_probabilities.len() != window_frames {
-            return Err(AppError::Transcription(format!(
-                "FireRedVAD returned {} frames for a {}-frame input window.",
-                window_probabilities.len(),
-                window_frames
-            )));
-        }
-
-        if window.output_start < window.output_end {
-            let source_start = window.output_start - window.input_start;
-            let source_end = window.output_end - window.input_start;
-            probabilities[window.output_start..window.output_end]
-                .copy_from_slice(&window_probabilities[source_start..source_end]);
-        }
+    for window in windows.iter().copied() {
+        let inference = infer_onnx_window(model, values, window)?;
+        copy_window_inference(&mut probabilities, inference);
 
         let inference_ratio = window.output_end as f64 / frame_count as f64;
         emit_vad_progress(
@@ -294,11 +307,146 @@ where
         );
     }
 
-    emit_vad_progress(progress, 0.93, "解讀 FireRedVAD 推論結果");
     Ok(probabilities)
 }
 
-#[derive(Debug, Clone, Copy)]
+fn run_onnx_parallel<F>(
+    model: Arc<VadOnnxModel>,
+    values: &[f32],
+    frame_count: usize,
+    windows: &[OnnxWindow],
+    worker_count: usize,
+    progress: &mut F,
+) -> AppResult<Vec<f32>>
+where
+    F: FnMut(VadProgress),
+{
+    let (sender, receiver) = mpsc::channel::<AppResult<WindowInference>>();
+    let stop_requested = Arc::new(AtomicBool::new(false));
+
+    thread::scope(|scope| {
+        for worker_index in 0..worker_count {
+            let sender = sender.clone();
+            let model = Arc::clone(&model);
+            let stop_requested = Arc::clone(&stop_requested);
+
+            scope.spawn(move || {
+                for window in assigned_onnx_windows(windows, worker_index, worker_count) {
+                    if stop_requested.load(Ordering::Relaxed) {
+                        break;
+                    }
+
+                    let result = infer_onnx_window(model.as_ref(), values, window);
+                    let should_stop = result.is_err();
+                    if should_stop {
+                        stop_requested.store(true, Ordering::Relaxed);
+                    }
+
+                    if sender.send(result).is_err() || should_stop {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(sender);
+
+        let mut probabilities = vec![0.0f32; frame_count];
+        let mut completed_output_frames = 0usize;
+        let mut first_error = None;
+
+        for result in receiver {
+            match result {
+                Ok(inference) => {
+                    completed_output_frames +=
+                        inference.output_end.saturating_sub(inference.output_start);
+                    copy_window_inference(&mut probabilities, inference);
+
+                    let inference_ratio = completed_output_frames as f64 / frame_count as f64;
+                    emit_vad_progress(
+                        progress,
+                        0.86 + 0.07 * inference_ratio,
+                        "執行 FireRedVAD 推論",
+                    );
+                }
+                Err(error) => {
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+
+        if let Some(error) = first_error {
+            Err(error)
+        } else {
+            Ok(probabilities)
+        }
+    })
+}
+
+struct WindowInference {
+    output_start: usize,
+    output_end: usize,
+    probabilities: Vec<f32>,
+}
+
+fn infer_onnx_window(
+    model: &VadOnnxModel,
+    values: &[f32],
+    window: OnnxWindow,
+) -> AppResult<WindowInference> {
+    let window_frames = window.input_end - window.input_start;
+    let feature_start = window.input_start * NUM_MEL_BINS;
+    let feature_end = window.input_end * NUM_MEL_BINS;
+    let input = tract_ndarray::Array3::from_shape_vec(
+        (1, window_frames, NUM_MEL_BINS),
+        values[feature_start..feature_end].to_vec(),
+    )
+    .map_err(|error| AppError::Transcription(format!("FireRedVAD input shape failed: {error}")))?;
+    let outputs = model
+        .run(tvec!(input.into_tensor().into()))
+        .map_err(|error| {
+            AppError::Transcription(format!("FireRedVAD ONNX inference failed: {error}"))
+        })?;
+    let output = outputs[0].to_array_view::<f32>().map_err(|error| {
+        AppError::Transcription(format!("FireRedVAD output decode failed: {error}"))
+    })?;
+    let window_probabilities = output.iter().copied().collect::<Vec<_>>();
+    if window_probabilities.len() != window_frames {
+        return Err(AppError::Transcription(format!(
+            "FireRedVAD returned {} frames for a {}-frame input window.",
+            window_probabilities.len(),
+            window_frames
+        )));
+    }
+
+    let probabilities = if window.output_start < window.output_end {
+        let source_start = window.output_start - window.input_start;
+        let source_end = window.output_end - window.input_start;
+        window_probabilities[source_start..source_end].to_vec()
+    } else {
+        Vec::new()
+    };
+
+    Ok(WindowInference {
+        output_start: window.output_start,
+        output_end: window.output_end,
+        probabilities,
+    })
+}
+
+fn copy_window_inference(probabilities: &mut [f32], inference: WindowInference) {
+    if inference.output_start < inference.output_end {
+        debug_assert_eq!(
+            inference.probabilities.len(),
+            inference.output_end - inference.output_start
+        );
+        probabilities[inference.output_start..inference.output_end]
+            .copy_from_slice(&inference.probabilities);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OnnxWindow {
     input_start: usize,
     input_end: usize,
@@ -349,6 +497,31 @@ fn onnx_windows(frame_count: usize) -> Vec<OnnxWindow> {
     }
 
     windows
+}
+
+fn onnx_worker_count(window_count: usize) -> usize {
+    if window_count <= 1 {
+        return 1;
+    }
+
+    thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(1)
+        .min(MAX_ONNX_INFERENCE_WORKERS)
+        .min(window_count)
+        .max(1)
+}
+
+fn assigned_onnx_windows(
+    windows: &[OnnxWindow],
+    worker_index: usize,
+    worker_count: usize,
+) -> impl Iterator<Item = OnnxWindow> + '_ {
+    windows
+        .iter()
+        .copied()
+        .skip(worker_index)
+        .step_by(worker_count.max(1))
 }
 
 fn emit_vad_progress<F>(progress: &mut F, ratio: f64, message: &'static str)
@@ -853,5 +1026,19 @@ mod tests {
                 "frame_count {frame_count} was not fully covered"
             );
         }
+    }
+
+    #[test]
+    fn assigned_onnx_windows_partition_the_original_sequence() {
+        let windows = onnx_windows(10_653);
+        let worker_count = 4;
+        let mut assigned = Vec::new();
+
+        for worker_index in 0..worker_count {
+            assigned.extend(assigned_onnx_windows(&windows, worker_index, worker_count));
+        }
+        assigned.sort_by_key(|window| window.output_start);
+
+        assert_eq!(assigned, windows);
     }
 }
