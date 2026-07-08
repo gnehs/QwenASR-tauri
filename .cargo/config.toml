@@ -1,0 +1,3 @@
+[env]
+# qwen3_asr builds MLX via CMake; MLX rejects deployment targets below macOS 14.
+MACOSX_DEPLOYMENT_TARGET = { value = "14.0", force = true }

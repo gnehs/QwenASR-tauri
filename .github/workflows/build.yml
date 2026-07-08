@@ -45,8 +45,9 @@ jobs:
       - name: Cache Rust
         uses: swatinem/rust-cache@v2
         with:
+          prefix-key: v1-rust-macos14
           workspaces: ./src-tauri -> target
-          cache-on-failure: true
+          cache-on-failure: false
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
