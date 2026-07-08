@@ -19,6 +19,7 @@
     "active": true,
     "targets": "all",
     "macOS": {
+      "minimumSystemVersion": "14.0",
       "files": {
         "MacOS/mlx.metallib": "resources/mlx.metallib"
       }
