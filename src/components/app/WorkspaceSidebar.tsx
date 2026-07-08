@@ -1,8 +1,6 @@
 import {
-  ArchiveIcon,
-  FileAudioIcon,
+  ListTodoIcon,
   Settings2Icon,
-  SparklesIcon,
 } from "lucide-react";
 import type { ComponentType } from "react";
 
@@ -13,7 +11,6 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -27,14 +24,9 @@ const navItems: Array<{
   icon: ComponentType;
 }> = [
   {
-    id: "transcribe",
-    label: "單次轉錄",
-    icon: FileAudioIcon,
-  },
-  {
-    id: "batch",
-    label: "批次轉錄",
-    icon: ArchiveIcon,
+    id: "tasks",
+    label: "任務管理",
+    icon: ListTodoIcon,
   },
 ];
 
@@ -47,16 +39,6 @@ export function WorkspaceSidebar({
 }) {
   return (
     <Sidebar collapsible="icon" variant="sidebar">
-      <SidebarHeader>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton size="lg">
-              <SparklesIcon />
-              <span>QwenASR Studio</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupLabel>工作流程</SidebarGroupLabel>

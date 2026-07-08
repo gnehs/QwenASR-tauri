@@ -68,9 +68,34 @@ export type OptionsState = {
   writeSrt: boolean;
 };
 
+export type TaskStatus = "queued" | "running" | "completed" | "failed";
+
+export type TranscriptionTask = {
+  id: string;
+  audioPath: string;
+  modelId: string;
+  modelTitle: string;
+  outputDir: string;
+  options: OptionsState;
+  status: TaskStatus;
+  progress: TranscriptionProgress | null;
+  result: TranscriptionResult | null;
+  error: string | null;
+  createdAt: number;
+  startedAt: number | null;
+  completedAt: number | null;
+};
+
+export type TaskDraft = {
+  files: string[];
+  modelId: string;
+  outputDir: string;
+  options: OptionsState;
+};
+
 export type SelectOption = {
   label: string;
   value: string;
 };
 
-export type WorkspaceView = "transcribe" | "batch" | "settings";
+export type WorkspaceView = "tasks" | "settings";

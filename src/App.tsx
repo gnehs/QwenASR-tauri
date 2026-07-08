@@ -1,30 +1,24 @@
 import { useState } from "react";
 import type { CSSProperties } from "react";
+import { ListPlusIcon } from "lucide-react";
 import { Toaster } from "sonner";
 
 import { AppToolbar } from "@/components/app/AppToolbar";
 import { WorkspaceSidebar } from "@/components/app/WorkspaceSidebar";
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { BatchTranscriptionPanel } from "@/components/transcription/BatchTranscriptionPanel";
-import { ResultsPanel } from "@/components/transcription/ResultsPanel";
 import { SettingsPanel } from "@/components/transcription/SettingsPanel";
-import { SingleTranscriptionPanel } from "@/components/transcription/SingleTranscriptionPanel";
+import { TaskManagerPanel } from "@/components/transcription/TaskManagerPanel";
 import { useTranscriptionWorkspace } from "@/hooks/use-transcription-workspace";
 import type { WorkspaceView } from "@/types/transcription";
 import "./App.css";
 
 const viewCopy: Record<WorkspaceView, { title: string; subtitle: string }> = {
-  transcribe: {
-    title: "轉錄工作台",
-    subtitle: "選檔、設定輸出，完成後取得文字與 SRT 字幕。",
-  },
-  batch: {
-    title: "批次轉錄",
-    subtitle: "將多個檔案排入佇列，逐一轉錄並輸出字幕。",
+  tasks: {
+    title: "轉錄任務",
+    subtitle: "單一檔案與多檔批次會進入同一個佇列依序處理。",
   },
   settings: {
     title: "設定",
@@ -34,9 +28,9 @@ const viewCopy: Record<WorkspaceView, { title: string; subtitle: string }> = {
 
 function App() {
   const workspace = useTranscriptionWorkspace();
-  const [activeView, setActiveView] = useState<WorkspaceView>("transcribe");
+  const [activeView, setActiveView] = useState<WorkspaceView>("tasks");
   const copy = viewCopy[activeView];
-  const modelLabel = workspace.selectedModel?.title ?? "未選擇";
+  const hasFinishedTasks = workspace.completedCount + workspace.failedCount > 0;
 
   return (
     <TooltipProvider>
@@ -60,64 +54,64 @@ function App() {
                 ffmpeg={workspace.ffmpeg}
                 title={copy.title}
                 subtitle={copy.subtitle}
-                modelReady={workspace.hasReadyModel}
-                modelLabel={modelLabel}
-                onOpenSettings={() => setActiveView("settings")}
-                onRefresh={workspace.refreshRuntime}
+                actions={
+                  activeView === "tasks" ? (
+                    <>
+                      <Badge variant="outline">
+                        {workspace.queuedCount} 排隊
+                      </Badge>
+                      <Badge variant="secondary">
+                        {workspace.completedCount} 完成
+                      </Badge>
+                      {workspace.failedCount > 0 ? (
+                        <Badge variant="destructive">
+                          {workspace.failedCount} 失敗
+                        </Badge>
+                      ) : null}
+                      <Button size="sm" onClick={workspace.pickFilesForTasks}>
+                        <ListPlusIcon data-icon="inline-start" />
+                        新增任務
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={!hasFinishedTasks}
+                        onClick={workspace.clearFinishedTasks}
+                      >
+                        清除已結束
+                      </Button>
+                    </>
+                  ) : null
+                }
               />
               <div className="main-content">
-                {activeView === "transcribe" ? (
-                  <div className="operation-grid">
-                    <SingleTranscriptionPanel
-                      singleFile={workspace.singleFile}
-                      outputDir={workspace.outputDir}
-                      options={workspace.options}
-                      isTranscribing={workspace.isTranscribing}
-                      canRun={workspace.canRunSingle}
-                      onPickFile={workspace.pickSingleFile}
-                      onPickOutputDir={workspace.pickOutputDir}
-                      onOptionsChange={workspace.setOptions}
-                      onRun={workspace.runSingleTranscription}
-                    />
-                    <ResultsPanel
-                      results={workspace.results}
-                      isTranscribing={workspace.isTranscribing}
-                      progress={workspace.transcriptionProgress}
-                    />
-                  </div>
-                ) : null}
-                {activeView === "batch" ? (
-                  <div className="operation-grid">
-                    <BatchTranscriptionPanel
-                      files={workspace.batchFiles}
-                      outputDir={workspace.outputDir}
-                      options={workspace.options}
-                      isTranscribing={workspace.isTranscribing}
-                      canRun={workspace.canRunBatch}
-                      onPickFiles={workspace.pickBatchFiles}
-                      onPickOutputDir={workspace.pickOutputDir}
-                      onRemoveFile={workspace.removeBatchFile}
-                      onClearFiles={workspace.clearBatchFiles}
-                      onOptionsChange={workspace.setOptions}
-                      onRun={workspace.runBatchTranscription}
-                    />
-                    <ResultsPanel
-                      results={workspace.results}
-                      isTranscribing={workspace.isTranscribing}
-                      progress={workspace.transcriptionProgress}
-                    />
-                  </div>
+                {activeView === "tasks" ? (
+                  <TaskManagerPanel
+                    tasks={workspace.tasks}
+                    models={workspace.models}
+                    taskDraft={workspace.taskDraft}
+                    draftModel={workspace.draftModel}
+                    canConfirmTasks={workspace.canConfirmTasks}
+                    isConfirmingTasks={workspace.isConfirmingTasks}
+                    isTaskDialogOpen={workspace.isTaskDialogOpen}
+                    isDraggingFiles={workspace.isDraggingFiles}
+                    onPickFiles={workspace.pickFilesForTasks}
+                    onPickOutputDir={workspace.pickTaskOutputDir}
+                    onTaskDraftChange={workspace.setTaskDraft}
+                    onTaskDialogOpenChange={workspace.setTaskDialogOpen}
+                    onConfirmTaskDraft={workspace.confirmTaskDraft}
+                    onRemoveTask={workspace.removeTask}
+                    onRetryTask={workspace.retryTask}
+                  />
                 ) : null}
                 {activeView === "settings" ? (
                   <SettingsPanel
                     models={workspace.models}
-                    selectedModelId={workspace.selectedModelId}
                     downloadProgress={workspace.downloadProgress}
                     isDownloading={workspace.isDownloading}
                     deletingModelId={workspace.deletingModelId}
                     isTranscribing={workspace.isTranscribing}
                     ffmpeg={workspace.ffmpeg}
-                    onSelectModel={workspace.setSelectedModelId}
                     onDownload={workspace.downloadSelectedModel}
                     onDeleteModel={workspace.deleteModel}
                     onRefresh={workspace.refreshRuntime}

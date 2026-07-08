@@ -1,0 +1,545 @@
+import { useEffect, useMemo, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import {
+  ArchiveIcon,
+  CheckCircle2Icon,
+  FileAudioIcon,
+  FolderOpenIcon,
+  RotateCcwIcon,
+  Settings2Icon,
+  Trash2Icon,
+  TriangleAlertIcon,
+} from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldSet,
+  FieldTitle,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Spinner } from "@/components/ui/spinner";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { TranscriptionProgressPanel } from "@/components/transcription/TranscriptionProgressPanel";
+import { languageItems } from "@/lib/app-constants";
+import { basename, formatDuration, formatTimestamp } from "@/lib/format";
+import { cn } from "@/lib/utils";
+import type {
+  ModelStatus,
+  TaskDraft,
+  TaskStatus,
+  TranscriptionTask,
+} from "@/types/transcription";
+
+const statusMeta: Record<
+  TaskStatus,
+  {
+    label: string;
+    badge: "default" | "secondary" | "destructive" | "outline";
+  }
+> = {
+  queued: { label: "排隊中", badge: "outline" },
+  running: { label: "轉錄中", badge: "default" },
+  completed: { label: "完成", badge: "secondary" },
+  failed: { label: "失敗", badge: "destructive" },
+};
+
+function taskPercent(task: TranscriptionTask) {
+  if (task.status === "completed") return 100;
+  if (task.status === "queued") return 0;
+  return Math.max(0, Math.min(100, task.progress?.percent ?? 0));
+}
+
+function taskLanguageLabel(task: TranscriptionTask) {
+  return (
+    languageItems.find((item) => item.value === task.options.language)?.label ??
+    "自動偵測"
+  );
+}
+
+export function TaskManagerPanel({
+  tasks,
+  models,
+  taskDraft,
+  draftModel,
+  canConfirmTasks,
+  isConfirmingTasks,
+  isTaskDialogOpen,
+  isDraggingFiles,
+  onPickFiles,
+  onPickOutputDir,
+  onTaskDraftChange,
+  onTaskDialogOpenChange,
+  onConfirmTaskDraft,
+  onRemoveTask,
+  onRetryTask,
+}: {
+  tasks: TranscriptionTask[];
+  models: ModelStatus[];
+  taskDraft: TaskDraft;
+  draftModel: ModelStatus | undefined;
+  canConfirmTasks: boolean;
+  isConfirmingTasks: boolean;
+  isTaskDialogOpen: boolean;
+  isDraggingFiles: boolean;
+  onPickFiles: () => void;
+  onPickOutputDir: () => void;
+  onTaskDraftChange: Dispatch<SetStateAction<TaskDraft>>;
+  onTaskDialogOpenChange: (open: boolean) => void;
+  onConfirmTaskDraft: () => void;
+  onRemoveTask: (taskId: string) => void;
+  onRetryTask: (taskId: string) => void;
+}) {
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
+  const modelItems = useMemo(
+    () =>
+      models.map((model) => ({
+        label: model.title,
+        value: model.id,
+      })),
+    [models],
+  );
+  const selectedLanguage =
+    languageItems.find((item) => item.value === taskDraft.options.language) ??
+    languageItems[0];
+
+  useEffect(() => {
+    if (!selectedTaskId || tasks.some((task) => task.id === selectedTaskId)) {
+      return;
+    }
+
+    setSelectedTaskId(tasks[0]?.id ?? null);
+  }, [selectedTaskId, tasks]);
+
+  return (
+    <>
+      <div className={cn("task-workspace", isDraggingFiles && "is-dragging")}>
+        <section className="task-list-panel" aria-label="轉錄任務">
+          <div className="task-list-content">
+            <ScrollArea
+              className={cn("task-table-wrap", tasks.length === 0 && "is-empty")}
+            >
+              {tasks.length > 0 ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>檔案</TableHead>
+                      <TableHead>狀態</TableHead>
+                      <TableHead>進度</TableHead>
+                      <TableHead>設定</TableHead>
+                      <TableHead className="text-right">動作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {tasks.map((task) => {
+                      const meta = statusMeta[task.status];
+                      const percent = taskPercent(task);
+
+                      return (
+                        <TableRow
+                          key={task.id}
+                          className="task-row"
+                          data-selected={selectedTask?.id === task.id}
+                          onClick={() => setSelectedTaskId(task.id)}
+                        >
+                          <TableCell className="task-name-cell">
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">
+                                {basename(task.audioPath)}
+                              </div>
+                              <div className="truncate text-xs text-muted-foreground">
+                                {task.outputDir || "來源資料夾"}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={meta.badge}>{meta.label}</Badge>
+                          </TableCell>
+                          <TableCell className="task-progress-cell">
+                            <Progress
+                              value={percent}
+                              aria-label={`${basename(task.audioPath)} 進度`}
+                            />
+                            <span className="text-xs tabular-nums text-muted-foreground">
+                              {percent.toFixed(0)}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="task-options-cell">
+                            <div className="truncate">{task.modelTitle}</div>
+                            <div className="truncate text-xs text-muted-foreground">
+                              {taskLanguageLabel(task)}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="task-row-actions">
+                              {task.status === "failed" ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onRetryTask(task.id);
+                                  }}
+                                >
+                                  <RotateCcwIcon data-icon="inline-start" />
+                                  <span className="sr-only">
+                                    重試 {basename(task.audioPath)}
+                                  </span>
+                                </Button>
+                              ) : null}
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                disabled={task.status === "running"}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  onRemoveTask(task.id);
+                                }}
+                              >
+                                <Trash2Icon data-icon="inline-start" />
+                                <span className="sr-only">
+                                  移除 {basename(task.audioPath)}
+                                </span>
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              ) : (
+                <Empty className="task-empty-state">
+                  <div className="task-empty-main">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <ArchiveIcon />
+                      </EmptyMedia>
+                      <EmptyTitle>尚無任務</EmptyTitle>
+                      <EmptyDescription>新增檔案後會自動排隊。</EmptyDescription>
+                    </EmptyHeader>
+                    <EmptyContent>
+                      <Button
+                        variant={isDraggingFiles ? "default" : "outline"}
+                        onClick={onPickFiles}
+                      >
+                        <FileAudioIcon data-icon="inline-start" />
+                        {isDraggingFiles ? "放開以加入任務" : "拖放或選取檔案"}
+                      </Button>
+                    </EmptyContent>
+                  </div>
+                  <p className="task-empty-supported">
+                    wav、mp3、m4a、mp4、mov、mkv、webm
+                  </p>
+                </Empty>
+              )}
+            </ScrollArea>
+          </div>
+        </section>
+      </div>
+
+      <Sheet
+        open={Boolean(selectedTask)}
+        onOpenChange={(open) => {
+          if (!open) setSelectedTaskId(null);
+        }}
+      >
+        <SheetContent side="right" className="task-detail-drawer">
+          <SheetHeader>
+            <SheetTitle>任務詳情</SheetTitle>
+            <SheetDescription>
+              {selectedTask ? basename(selectedTask.audioPath) : "尚未選取任務"}
+            </SheetDescription>
+          </SheetHeader>
+          {selectedTask ? (
+            <div className="task-detail-drawer-status">
+              <Badge variant={statusMeta[selectedTask.status].badge}>
+                {statusMeta[selectedTask.status].label}
+              </Badge>
+            </div>
+          ) : null}
+          <div className="task-detail-content">
+            {selectedTask ? <TaskDetail task={selectedTask} /> : null}
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={isTaskDialogOpen} onOpenChange={onTaskDialogOpenChange}>
+        <DialogContent className="task-dialog">
+          <DialogHeader>
+            <DialogTitle>新增轉錄任務</DialogTitle>
+            <DialogDescription>
+              {taskDraft.files.length} 個檔案會使用相同模型、語言與輸出資料夾。
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="task-dialog-body">
+            <FieldGroup>
+              <Field>
+                <FieldLabel>轉錄模型</FieldLabel>
+                <Select
+                  items={modelItems}
+                  value={taskDraft.modelId}
+                  onValueChange={(value) =>
+                    onTaskDraftChange((current) => ({
+                      ...current,
+                      modelId: String(value),
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full" aria-label="轉錄模型">
+                    <SelectValue>
+                      {draftModel?.title ?? "選擇轉錄模型"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {models.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.title}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field>
+                <FieldLabel>轉錄語言</FieldLabel>
+                <Select
+                  items={languageItems}
+                  value={taskDraft.options.language}
+                  onValueChange={(value) =>
+                    onTaskDraftChange((current) => ({
+                      ...current,
+                      options: {
+                        ...current.options,
+                        language: String(value),
+                      },
+                    }))
+                  }
+                >
+                  <SelectTrigger className="w-full" aria-label="轉錄語言">
+                    <SelectValue>{selectedLanguage.label}</SelectValue>
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {languageItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="task-output-dir">輸出資料夾</FieldLabel>
+                <div className="flex gap-2">
+                  <Input
+                    id="task-output-dir"
+                    readOnly
+                    value={taskDraft.outputDir}
+                    placeholder="預設使用來源檔案所在資料夾"
+                  />
+                  <Button variant="outline" onClick={onPickOutputDir}>
+                    <FolderOpenIcon data-icon="inline-start" />
+                    選取
+                  </Button>
+                </div>
+              </Field>
+
+              <FieldSet>
+                <Field orientation="horizontal">
+                  <FieldContent>
+                    <FieldTitle id="task-write-srt-label">
+                      輸出 SRT 字幕
+                    </FieldTitle>
+                    <FieldDescription>完成後一併產生字幕檔。</FieldDescription>
+                  </FieldContent>
+                  <Switch
+                    aria-labelledby="task-write-srt-label"
+                    checked={taskDraft.options.writeSrt}
+                    onCheckedChange={(checked) =>
+                      onTaskDraftChange((current) => ({
+                        ...current,
+                        options: {
+                          ...current.options,
+                          writeSrt: checked,
+                        },
+                      }))
+                    }
+                  />
+                </Field>
+              </FieldSet>
+            </FieldGroup>
+
+            <Separator />
+
+            <ScrollArea className="task-draft-files">
+              {taskDraft.files.map((file) => (
+                <div key={file} className="task-draft-file">
+                  <FileAudioIcon />
+                  <span className="truncate">{basename(file)}</span>
+                </div>
+              ))}
+            </ScrollArea>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => onTaskDialogOpenChange(false)}
+            >
+              取消
+            </Button>
+            <Button disabled={!canConfirmTasks} onClick={onConfirmTaskDraft}>
+              {isConfirmingTasks ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <CheckCircle2Icon data-icon="inline-start" />
+              )}
+              {isConfirmingTasks ? "加入中" : "加入佇列"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function TaskDetail({ task }: { task: TranscriptionTask }) {
+  const progress = task.progress;
+  const result = task.result;
+
+  if (task.status === "failed") {
+    return (
+      <Alert variant="destructive">
+        <TriangleAlertIcon />
+        <AlertTitle>轉錄失敗</AlertTitle>
+        <AlertDescription>{task.error ?? "未知錯誤"}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (task.status === "queued") {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <ArchiveIcon />
+          </EmptyMedia>
+          <EmptyTitle>等待處理</EmptyTitle>
+          <EmptyDescription>
+            {task.modelTitle} · {taskLanguageLabel(task)}
+          </EmptyDescription>
+        </EmptyHeader>
+      </Empty>
+    );
+  }
+
+  if (task.status === "running") {
+    return (
+      <Empty>
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <Settings2Icon />
+          </EmptyMedia>
+          <EmptyTitle>轉錄中</EmptyTitle>
+          <EmptyDescription>{basename(task.audioPath)}</EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <TranscriptionProgressPanel progress={progress} />
+        </EmptyContent>
+      </Empty>
+    );
+  }
+
+  if (!result) return null;
+
+  return (
+    <ScrollArea className="task-result-scroll">
+      <div className="task-result-stack">
+        <div className="task-result-meta">
+          <div>
+            <div className="text-sm font-medium">{basename(result.audioPath)}</div>
+            <div className="truncate text-sm text-muted-foreground">
+              {result.srtPath ? `SRT: ${result.srtPath}` : "未輸出 SRT"}
+            </div>
+          </div>
+          <Badge variant="outline">{formatDuration(result.durationMs)}</Badge>
+        </div>
+        <Textarea readOnly value={result.text} className="min-h-36 resize-none" />
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>時間</TableHead>
+              <TableHead>文字</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {result.segments.map((segment, index) => (
+              <TableRow key={`${segment.startMs}-${index}`}>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {formatTimestamp(segment.startMs)}
+                </TableCell>
+                <TableCell>{segment.text}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </ScrollArea>
+  );
+}

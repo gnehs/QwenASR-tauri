@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  CheckCircle2Icon,
   DownloadIcon,
   RefreshCwIcon,
   Trash2Icon,
@@ -8,13 +7,6 @@ import {
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   Dialog,
   DialogClose,
@@ -36,28 +28,23 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import type { DownloadProgress, ModelStatus } from "@/types/transcription";
 
 export function ModelPanel({
   models,
-  selectedModelId,
   downloadProgress,
   isDownloading,
   deletingModelId,
   isTranscribing,
-  onSelectModel,
   onDownload,
   onDeleteModel,
   onRefresh,
 }: {
   models: ModelStatus[];
-  selectedModelId: string;
   downloadProgress: DownloadProgress | null;
   isDownloading: boolean;
   deletingModelId: string | null;
   isTranscribing: boolean;
-  onSelectModel: (value: string) => void;
   onDownload: (modelId?: string) => void;
   onDeleteModel: (modelId: string) => Promise<boolean>;
   onRefresh: () => void;
@@ -68,12 +55,16 @@ export function ModelPanel({
   const isDeletingModel = deletingModelId !== null;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>模型</CardTitle>
-        <CardDescription>選擇要使用的 QwenASR 模型。</CardDescription>
-      </CardHeader>
-      <CardContent className="flex flex-col gap-4">
+    <section className="settings-section" aria-labelledby="model-panel-title">
+      <div className="settings-section-header">
+        <h2 id="model-panel-title" className="settings-section-title">
+          模型
+        </h2>
+        <p className="settings-section-description">
+          下載或移除可用的 QwenASR 模型。
+        </p>
+      </div>
+      <div className="settings-section-content">
         {models.length === 0 ? (
           <Empty>
             <EmptyHeader>
@@ -95,7 +86,6 @@ export function ModelPanel({
         ) : (
           <div className="model-list">
             {models.map((model) => {
-              const isSelected = model.id === selectedModelId;
               const isActiveDownload =
                 isDownloading && downloadProgress?.modelId === model.id;
               const isDeletingThisModel = deletingModelId === model.id;
@@ -107,10 +97,7 @@ export function ModelPanel({
                 !isTranscribing;
 
               return (
-                <div
-                  key={model.id}
-                  className={cn("model-card", isSelected && "is-selected")}
-                >
+                <div key={model.id} className="model-card">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <div className="truncate text-sm font-medium">
@@ -119,7 +106,6 @@ export function ModelPanel({
                       {model.recommended ? (
                         <Badge variant="secondary">建議</Badge>
                       ) : null}
-                      {isSelected ? <Badge>使用中</Badge> : null}
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {model.description}
@@ -135,34 +121,21 @@ export function ModelPanel({
                   </div>
 
                   <div className="flex flex-wrap justify-end gap-2">
-                    <Button
-                      variant={model.installed ? "outline" : "default"}
-                      disabled={
-                        isActiveDownload ||
-                        isDownloading ||
-                        isDeletingModel ||
-                        (model.installed && isSelected)
-                      }
-                      onClick={() => {
-                        onSelectModel(model.id);
-                        if (!model.installed) {
-                          onDownload(model.id);
+                    {!model.installed ? (
+                      <Button
+                        disabled={
+                          isActiveDownload || isDownloading || isDeletingModel
                         }
-                      }}
-                    >
-                      {isActiveDownload ? (
-                        <Spinner data-icon="inline-start" />
-                      ) : model.installed ? (
-                        <CheckCircle2Icon data-icon="inline-start" />
-                      ) : (
-                        <DownloadIcon data-icon="inline-start" />
-                      )}
-                      {model.installed
-                        ? isSelected
-                          ? "使用中"
-                          : "使用此模型"
-                        : "下載模型"}
-                    </Button>
+                        onClick={() => onDownload(model.id)}
+                      >
+                        {isActiveDownload ? (
+                          <Spinner data-icon="inline-start" />
+                        ) : (
+                          <DownloadIcon data-icon="inline-start" />
+                        )}
+                        {isActiveDownload ? "下載中" : "下載模型"}
+                      </Button>
+                    ) : null}
 
                     {model.installed ? (
                       <Dialog
@@ -247,7 +220,7 @@ export function ModelPanel({
             </div>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
