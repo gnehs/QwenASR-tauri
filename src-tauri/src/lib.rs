@@ -11,7 +11,10 @@ use error::AppResult;
 use models::{
     FfmpegStatus, ModelStatus, TranscribeBatchRequest, TranscribeFileRequest, TranscriptionResult,
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
+
+#[cfg(target_os = "macos")]
+use tauri::TitleBarStyle;
 
 #[tauri::command]
 fn list_available_models() -> AppResult<Vec<ModelStatus>> {
@@ -66,6 +69,33 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            let window_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                .title("QwenASR Studio")
+                .inner_size(1180.0, 760.0)
+                .min_inner_size(980.0, 680.0);
+
+            #[cfg(target_os = "macos")]
+            let window_builder = window_builder.title_bar_style(TitleBarStyle::Transparent);
+
+            let window = window_builder.build()?;
+
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_app_kit::{NSColor, NSWindow};
+
+                let ns_window: &NSWindow = unsafe { &*window.ns_window()?.cast() };
+                let bg_color = NSColor::colorWithRed_green_blue_alpha(
+                    250.0 / 255.0,
+                    250.0 / 255.0,
+                    250.0 / 255.0,
+                    1.0,
+                );
+                ns_window.setBackgroundColor(Some(&bg_color));
+            }
+
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             list_available_models,
             get_ffmpeg_status,

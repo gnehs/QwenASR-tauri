@@ -10,15 +10,6 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "title": "QwenASR Studio",
-        "width": 1180,
-        "height": 760,
-        "minWidth": 980,
-        "minHeight": 680
-      }
-    ],
     "security": {
       "csp": null
     }

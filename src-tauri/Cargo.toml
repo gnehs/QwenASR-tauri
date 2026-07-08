@@ -35,6 +35,7 @@ rustfft = "6.4"
 tauri-plugin-notification = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3.2", features = ["NSColor", "NSWindow", "objc2-core-foundation"] }
 qwen3_asr = { git = "https://github.com/second-state/qwen3_asr_rs", tag = "v0.2.0", default-features = false, features = ["mlx"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
