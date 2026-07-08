@@ -5,7 +5,6 @@ import { Toaster } from "sonner";
 
 import { AppToolbar } from "@/components/app/AppToolbar";
 import { WorkspaceSidebar } from "@/components/app/WorkspaceSidebar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -31,7 +30,9 @@ function App() {
   const workspace = useTranscriptionWorkspace();
   const [activeView, setActiveView] = useState<WorkspaceView>("tasks");
   const copy = viewCopy[activeView];
-  const hasFinishedTasks = workspace.completedCount + workspace.failedCount > 0;
+  const hasFinishedTasks = workspace.tasks.some(
+    (task) => task.status === "completed" || task.status === "failed",
+  );
 
   return (
     <TooltipProvider>
@@ -58,17 +59,6 @@ function App() {
                 actions={
                   activeView === "tasks" ? (
                     <>
-                      <Badge variant="outline">
-                        {workspace.queuedCount} 排隊
-                      </Badge>
-                      <Badge variant="secondary">
-                        {workspace.completedCount} 完成
-                      </Badge>
-                      {workspace.failedCount > 0 ? (
-                        <Badge variant="destructive">
-                          {workspace.failedCount} 失敗
-                        </Badge>
-                      ) : null}
                       <Button size="sm" onClick={workspace.pickFilesForTasks}>
                         <ListPlusIcon data-icon="inline-start" />
                         新增任務

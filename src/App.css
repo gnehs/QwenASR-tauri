@@ -6,12 +6,19 @@
 .app-window {
   min-height: 100vh;
   overflow: hidden;
-  border-top: 1px solid var(--border);
   background: var(--background);
 }
 
-.app-window [data-slot="sidebar-container"] {
-  border-top: 1px solid var(--border);
+.app-window::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 50;
+  height: 1px;
+  pointer-events: none;
+  background: var(--border);
 }
 
 .window-toolbar {
@@ -288,11 +295,6 @@
   max-width: min(720px, 100vw);
 }
 
-.task-detail-drawer-status {
-  display: flex;
-  padding: 0 16px;
-}
-
 .task-detail-content {
   display: flex;
   min-height: 0;
@@ -305,6 +307,13 @@
 
 .task-detail-content [data-slot="empty"] {
   min-height: 320px;
+}
+
+.task-running-detail {
+  display: flex;
+  min-width: 0;
+  width: 100%;
+  flex-direction: column;
 }
 
 .task-result-scroll {
@@ -333,6 +342,11 @@
   max-width: min(680px, calc(100vw - 2rem));
 }
 
+.task-download-dialog {
+  width: min(460px, calc(100vw - 2rem));
+  max-width: min(460px, calc(100vw - 2rem));
+}
+
 .task-dialog-body {
   display: flex;
   min-height: 0;
@@ -347,13 +361,22 @@
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
+  padding: 4px 0 8px;
+}
+
+.task-model-download-progress {
+  gap: 12px;
 }
 
 .task-draft-files {
   height: 160px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+}
+
+.task-draft-files [data-slot="scroll-area-viewport"] {
+  overflow-x: hidden;
 }
 
 .task-draft-file {
@@ -363,6 +386,15 @@
   gap: 8px;
   padding: 8px 10px;
   font-size: 0.875rem;
+}
+
+.task-draft-file > svg {
+  flex: 0 0 auto;
+}
+
+.task-draft-file > span {
+  min-width: 0;
+  flex: 1;
 }
 
 .task-draft-file + .task-draft-file {

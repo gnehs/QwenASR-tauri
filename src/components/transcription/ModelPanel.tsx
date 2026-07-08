@@ -30,6 +30,11 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format";
 import type { DownloadProgress, ModelStatus } from "@/types/transcription";
 
+const modelTraitBadges: Record<string, string[]> = {
+  "qwen3-asr-0.6b": ["速度快", "品質普通"],
+  "qwen3-asr-1.7b": ["品質高", "速度較慢"],
+};
+
 export function ModelPanel({
   models,
   downloadProgress,
@@ -88,6 +93,7 @@ export function ModelPanel({
         ) : (
           <div className="model-list">
             {models.map((model) => {
+              const traitBadges = modelTraitBadges[model.id] ?? [];
               const isActiveDownload =
                 isDownloading && downloadProgress?.modelId === model.id;
               const isDeletingThisModel = deletingModelId === model.id;
@@ -108,6 +114,11 @@ export function ModelPanel({
                       {model.recommended ? (
                         <Badge variant="secondary">建議</Badge>
                       ) : null}
+                      {traitBadges.map((trait) => (
+                        <Badge key={trait} variant="outline">
+                          {trait}
+                        </Badge>
+                      ))}
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {model.description}

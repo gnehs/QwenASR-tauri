@@ -1,7 +1,7 @@
 import { ClockIcon } from "lucide-react";
 
 import { Progress } from "@/components/ui/progress";
-import { basename, formatDuration } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
 import type { TranscriptionProgress } from "@/types/transcription";
 
 const phaseLabels: Record<string, string> = {
@@ -25,8 +25,6 @@ export function TranscriptionProgressPanel({
   if (!progress) return null;
 
   const percent = Math.max(0, Math.min(100, progress.percent));
-  const filePath = progress.currentFile ?? progress.audioPath;
-  const fileName = filePath ? basename(filePath) : "準備中";
   const phaseLabel = phaseLabels[progress.phase] ?? progress.phase;
   const chunkProgress =
     progress.totalChunks && progress.chunkIndex !== null
@@ -54,6 +52,7 @@ export function TranscriptionProgressPanel({
     progress.totalFiles > 1 && progress.fileIndex > 0
       ? `第 ${progress.fileIndex} / ${progress.totalFiles} 個檔案`
       : phaseLabel;
+  const detailLine = [fileProgress, chunkProgress].filter(Boolean).join(" · ");
 
   return (
     <div className="transcription-progress">
@@ -63,7 +62,7 @@ export function TranscriptionProgressPanel({
             {progress.message || "轉錄中"}
           </div>
           <div className="truncate text-xs text-muted-foreground">
-            {[fileName, fileProgress, chunkProgress].filter(Boolean).join(" · ")}
+            {detailLine}
           </div>
         </div>
         <div className="transcription-progress-stat">
@@ -88,7 +87,6 @@ export function TranscriptionProgressPanel({
           <ClockIcon className="size-3.5 shrink-0" />
           已用 {formatDuration(progress.elapsedMs)}
         </span>
-        <span className="tabular-nums">{percent.toFixed(1)}%</span>
       </div>
     </div>
   );

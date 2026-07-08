@@ -226,11 +226,6 @@ export function useTranscriptionWorkspace() {
   const hasReadyModel = Boolean(selectedModel?.installed);
   const runningTask = tasks.find((task) => task.status === "running") ?? null;
   const isTranscribing = Boolean(runningTask);
-  const queuedCount = tasks.filter((task) => task.status === "queued").length;
-  const completedCount = tasks.filter(
-    (task) => task.status === "completed",
-  ).length;
-  const failedCount = tasks.filter((task) => task.status === "failed").length;
   const canConfirmTasks =
     taskDraft.files.length > 0 &&
     Boolean(draftModel) &&
@@ -691,9 +686,6 @@ export function useTranscriptionWorkspace() {
     isTaskDialogOpen,
     isDraggingFiles,
     runningTask,
-    queuedCount,
-    completedCount,
-    failedCount,
     hasReadyModel,
     canConfirmTasks,
     setSelectedModelId,

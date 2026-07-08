@@ -2,12 +2,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   ArchiveIcon,
-  CheckCircle2Icon,
   DownloadIcon,
   FileAudioIcon,
   FolderOpenIcon,
+  PlusIcon,
   RotateCcwIcon,
-  Settings2Icon,
   Trash2Icon,
   TriangleAlertIcon,
 } from "lucide-react";
@@ -41,7 +40,11 @@ import {
   FieldTitle,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
+import {
+  Progress,
+  ProgressLabel,
+  ProgressValue,
+} from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
@@ -187,6 +190,13 @@ export function TaskManagerPanel({
     languageItems[0];
   const taskModelDownloadProgress =
     downloadProgress?.modelId === taskDraft.modelId ? downloadProgress : null;
+  const taskModelDownloadPercent = Math.max(
+    0,
+    Math.min(100, taskModelDownloadProgress?.percent ?? 0),
+  );
+  const taskModelDownloadSpeed = taskModelDownloadProgress
+    ? `${formatBytes(downloadMovingAverageSpeedBytesPerSec)}/s`
+    : "等待中";
 
   useEffect(() => {
     if (!hasRunningTasks) return;
@@ -350,13 +360,6 @@ export function TaskManagerPanel({
               {selectedTask ? basename(selectedTask.audioPath) : "尚未選取任務"}
             </SheetDescription>
           </SheetHeader>
-          {selectedTask ? (
-            <div className="task-detail-drawer-status">
-              <Badge variant={statusMeta[selectedTask.status].badge}>
-                {statusMeta[selectedTask.status].label}
-              </Badge>
-            </div>
-          ) : null}
           <div className="task-detail-content">
             {selectedTask ? <TaskDetail task={selectedTask} /> : null}
           </div>
@@ -497,9 +500,9 @@ export function TaskManagerPanel({
               {isConfirmingTasks ? (
                 <Spinner data-icon="inline-start" />
               ) : (
-                <CheckCircle2Icon data-icon="inline-start" />
+                <PlusIcon data-icon="inline-start" />
               )}
-              {isConfirmingTasks ? "加入中" : "加入佇列"}
+              {isConfirmingTasks ? "新增中" : "新增任務"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -513,7 +516,10 @@ export function TaskManagerPanel({
         }}
         disablePointerDismissal={isConfirmingTasks || isDownloading}
       >
-        <DialogContent showCloseButton={!isConfirmingTasks && !isDownloading}>
+        <DialogContent
+          className="task-download-dialog"
+          showCloseButton={!isConfirmingTasks && !isDownloading}
+        >
           <DialogHeader>
             <DialogTitle>下載模型</DialogTitle>
             <DialogDescription>
@@ -531,30 +537,18 @@ export function TaskManagerPanel({
             </Alert>
           ) : (
             <div className="task-model-download">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="truncate">
-                  {taskModelDownloadProgress?.message ?? "準備下載模型"}
-                </span>
-                <span className="tabular-nums text-muted-foreground">
-                  {taskModelDownloadProgress
-                    ? `${formatBytes(downloadMovingAverageSpeedBytesPerSec)}/s`
-                    : "等待中"}
-                </span>
-              </div>
-              <Progress value={taskModelDownloadProgress?.percent ?? 0}>
-                <span className="ml-auto text-sm tabular-nums text-muted-foreground">
-                  {(taskModelDownloadProgress?.percent ?? 0).toFixed(0)}%
-                </span>
+              <Progress
+                aria-label="模型下載整體進度"
+                className="task-model-download-progress"
+                value={taskModelDownloadPercent}
+              >
+                <ProgressLabel className="min-w-0 flex-1 truncate font-normal text-muted-foreground">
+                  下載速度 {taskModelDownloadSpeed}
+                </ProgressLabel>
+                <ProgressValue className="shrink-0 text-base font-medium text-foreground">
+                  {() => `${taskModelDownloadPercent.toFixed(0)}%`}
+                </ProgressValue>
               </Progress>
-              <div className="truncate text-xs text-muted-foreground">
-                {taskModelDownloadProgress
-                  ? `${taskModelDownloadProgress.currentFile ?? "模型"} · ${
-                      taskModelDownloadProgress.fileIndex
-                    }/${taskModelDownloadProgress.totalFiles} · ${formatBytes(
-                      taskModelDownloadProgress.fileBytesCompleted,
-                    )} / ${formatBytes(taskModelDownloadProgress.fileTotalBytes)}`
-                  : draftModel?.sizeHint ?? "模型檔案"}
-              </div>
             </div>
           )}
 
@@ -621,18 +615,9 @@ function TaskDetail({ task }: { task: TranscriptionTask }) {
 
   if (task.status === "running") {
     return (
-      <Empty>
-        <EmptyHeader>
-          <EmptyMedia variant="icon">
-            <Settings2Icon />
-          </EmptyMedia>
-          <EmptyTitle>轉錄中</EmptyTitle>
-          <EmptyDescription>{basename(task.audioPath)}</EmptyDescription>
-        </EmptyHeader>
-        <EmptyContent>
-          <TranscriptionProgressPanel progress={progress} />
-        </EmptyContent>
-      </Empty>
+      <div className="task-running-detail">
+        <TranscriptionProgressPanel progress={progress} />
+      </div>
     );
   }
 
