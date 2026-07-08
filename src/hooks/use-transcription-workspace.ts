@@ -287,6 +287,7 @@ export function useTranscriptionWorkspace() {
               status: "running",
               error: null,
               progress: null,
+              progressUpdatedAt: null,
               result: null,
               startedAt: Date.now(),
               completedAt: null,
@@ -310,6 +311,7 @@ export function useTranscriptionWorkspace() {
                 ...item,
                 status: "completed",
                 progress: null,
+                progressUpdatedAt: null,
                 result,
                 completedAt: Date.now(),
               }
@@ -327,6 +329,7 @@ export function useTranscriptionWorkspace() {
                 ...item,
                 status: "failed",
                 error: message,
+                progressUpdatedAt: null,
                 completedAt: Date.now(),
               }
             : item,
@@ -361,13 +364,14 @@ export function useTranscriptionWorkspace() {
       }),
       listen<TranscriptionProgress>("transcription-progress", (event) => {
         const runningTaskId = runningTaskIdRef.current;
+        const progressUpdatedAt = Date.now();
 
         setTranscriptionProgress(event.payload);
         if (runningTaskId) {
           setTasks((current) =>
             current.map((task) =>
               task.id === runningTaskId
-                ? { ...task, progress: event.payload }
+                ? { ...task, progress: event.payload, progressUpdatedAt }
                 : task,
             ),
           );
@@ -602,6 +606,7 @@ export function useTranscriptionWorkspace() {
           options: taskDraft.options,
           status: "queued",
           progress: null,
+          progressUpdatedAt: null,
           result: null,
           error: null,
           createdAt: createdAt + index,
@@ -645,6 +650,7 @@ export function useTranscriptionWorkspace() {
               ...task,
               status: "queued",
               progress: null,
+              progressUpdatedAt: null,
               result: null,
               error: null,
               startedAt: null,

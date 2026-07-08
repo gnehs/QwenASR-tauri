@@ -44,6 +44,11 @@
   padding: 16px;
 }
 
+.main-content.is-task-view {
+  overflow: hidden;
+  padding: 0;
+}
+
 .operation-grid {
   display: flex;
   min-height: 0;
@@ -176,13 +181,6 @@
 .task-table-wrap {
   min-height: 0;
   flex: 1;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-
-.task-table-wrap.is-empty {
-  border: 0;
-  border-radius: 0;
 }
 
 .task-table-wrap [data-slot="empty"] {
@@ -246,11 +244,34 @@
 }
 
 .task-progress-cell {
-  min-width: 150px;
+  min-width: 170px;
 }
 
-.task-progress-cell [data-slot="progress"] {
+.task-progress-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
   gap: 6px;
+}
+
+.task-progress-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.task-progress-meta > span {
+  min-width: 0;
+}
+
+.task-progress-meta > span:last-child {
+  text-align: right;
 }
 
 .task-options-cell {
@@ -450,6 +471,10 @@
   border-radius: var(--radius-lg);
   padding: 14px;
   background: color-mix(in oklch, var(--card), var(--muted) 22%);
+}
+
+.tool-card {
+  border-radius: var(--radius-lg);
 }
 
 .result-row {

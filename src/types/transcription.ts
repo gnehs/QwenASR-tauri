@@ -79,6 +79,7 @@ export type TranscriptionTask = {
   options: OptionsState;
   status: TaskStatus;
   progress: TranscriptionProgress | null;
+  progressUpdatedAt: number | null;
   result: TranscriptionResult | null;
   error: string | null;
   createdAt: number;

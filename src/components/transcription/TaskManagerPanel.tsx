@@ -106,6 +106,18 @@ function taskPercent(task: TranscriptionTask) {
   return Math.max(0, Math.min(100, task.progress?.percent ?? 0));
 }
 
+function taskEtaLabel(task: TranscriptionTask, now: number) {
+  if (task.status !== "running") return "";
+  if (task.progress?.etaMs == null || task.progressUpdatedAt == null) {
+    return "ETA --";
+  }
+
+  const elapsedSinceProgress = Math.max(0, now - task.progressUpdatedAt);
+  const etaMs = Math.max(0, task.progress.etaMs - elapsedSinceProgress);
+
+  return `ETA ${formatDuration(etaMs)}`;
+}
+
 function taskLanguageLabel(task: TranscriptionTask) {
   return (
     languageItems.find((item) => item.value === task.options.language)?.label ??
@@ -159,7 +171,9 @@ export function TaskManagerPanel({
   onRetryTask: (taskId: string) => void;
 }) {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [etaTick, setEtaTick] = useState(() => Date.now());
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
+  const hasRunningTasks = tasks.some((task) => task.status === "running");
   const modelItems = useMemo(
     () =>
       models.map((model) => ({
@@ -173,6 +187,17 @@ export function TaskManagerPanel({
     languageItems[0];
   const taskModelDownloadProgress =
     downloadProgress?.modelId === taskDraft.modelId ? downloadProgress : null;
+
+  useEffect(() => {
+    if (!hasRunningTasks) return;
+
+    setEtaTick(Date.now());
+    const timer = window.setInterval(() => {
+      setEtaTick(Date.now());
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [hasRunningTasks]);
 
   useEffect(() => {
     if (!selectedTaskId || tasks.some((task) => task.id === selectedTaskId)) {
@@ -227,13 +252,16 @@ export function TaskManagerPanel({
                             <Badge variant={meta.badge}>{meta.label}</Badge>
                           </TableCell>
                           <TableCell className="task-progress-cell">
-                            <Progress
-                              value={percent}
-                              aria-label={`${basename(task.audioPath)} 進度`}
-                            />
-                            <span className="text-xs tabular-nums text-muted-foreground">
-                              {percent.toFixed(0)}%
-                            </span>
+                            <div className="task-progress-stack">
+                              <Progress
+                                value={percent}
+                                aria-label={`${basename(task.audioPath)} 進度`}
+                              />
+                              <div className="task-progress-meta">
+                                <span>{percent.toFixed(0)}%</span>
+                                <span>{taskEtaLabel(task, etaTick)}</span>
+                              </div>
+                            </div>
                           </TableCell>
                           <TableCell className="task-options-cell">
                             <div className="truncate">{task.modelTitle}</div>

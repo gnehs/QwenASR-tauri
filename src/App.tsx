@@ -12,6 +12,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SettingsPanel } from "@/components/transcription/SettingsPanel";
 import { TaskManagerPanel } from "@/components/transcription/TaskManagerPanel";
 import { useTranscriptionWorkspace } from "@/hooks/use-transcription-workspace";
+import { cn } from "@/lib/utils";
 import type { WorkspaceView } from "@/types/transcription";
 import "./App.css";
 
@@ -72,19 +73,25 @@ function App() {
                         <ListPlusIcon data-icon="inline-start" />
                         新增任務
                       </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={!hasFinishedTasks}
-                        onClick={workspace.clearFinishedTasks}
-                      >
-                        清除已結束
-                      </Button>
+                      {hasFinishedTasks ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={workspace.clearFinishedTasks}
+                        >
+                          清除已結束
+                        </Button>
+                      ) : null}
                     </>
                   ) : null
                 }
               />
-              <div className="main-content">
+              <div
+                className={cn(
+                  "main-content",
+                  activeView === "tasks" && "is-task-view",
+                )}
+              >
                 {activeView === "tasks" ? (
                   <TaskManagerPanel
                     tasks={workspace.tasks}
