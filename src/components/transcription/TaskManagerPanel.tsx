@@ -361,7 +361,9 @@ export function TaskManagerPanel({
             </SheetDescription>
           </SheetHeader>
           <div className="task-detail-content">
-            {selectedTask ? <TaskDetail task={selectedTask} /> : null}
+            {selectedTask ? (
+              <TaskDetail now={etaTick} task={selectedTask} />
+            ) : null}
           </div>
         </SheetContent>
       </Sheet>
@@ -583,7 +585,7 @@ export function TaskManagerPanel({
   );
 }
 
-function TaskDetail({ task }: { task: TranscriptionTask }) {
+function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
   const progress = task.progress;
   const result = task.result;
 
@@ -619,7 +621,11 @@ function TaskDetail({ task }: { task: TranscriptionTask }) {
     return (
       <ScrollArea className="task-running-scroll">
         <div className="task-running-detail">
-          <TranscriptionProgressPanel progress={progress} />
+          <TranscriptionProgressPanel
+            now={now}
+            progress={progress}
+            progressUpdatedAt={task.progressUpdatedAt}
+          />
           {partialTranscript ? (
             <div className="task-partial-result">
               <div className="task-partial-result-head">

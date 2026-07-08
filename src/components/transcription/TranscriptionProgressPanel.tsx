@@ -25,9 +25,13 @@ const etaPendingLabels: Record<string, string> = {
 };
 
 export function TranscriptionProgressPanel({
+  now,
   progress,
+  progressUpdatedAt,
 }: {
+  now?: number;
   progress: TranscriptionProgress | null;
+  progressUpdatedAt?: number | null;
 }) {
   if (!progress) return null;
 
@@ -60,10 +64,19 @@ export function TranscriptionProgressPanel({
       ? `第 ${progress.fileIndex} / ${progress.totalFiles} 個檔案`
       : phaseLabel;
   const detailLine = [fileProgress, chunkProgress].filter(Boolean).join(" · ");
-  const etaLabel =
+  const elapsedSinceProgress =
+    now != null && progressUpdatedAt != null
+      ? Math.max(0, now - progressUpdatedAt)
+      : 0;
+  const elapsedMs = progress.elapsedMs + elapsedSinceProgress;
+  const etaMs =
     progress.etaMs == null
+      ? null
+      : Math.max(0, progress.etaMs - elapsedSinceProgress);
+  const etaLabel =
+    etaMs == null
       ? (etaPendingLabels[progress.phase] ?? "ETA 估算中")
-      : `ETA ${formatDuration(progress.etaMs)}`;
+      : `ETA ${formatDuration(etaMs)}`;
 
   return (
     <div className="transcription-progress">
@@ -94,7 +107,7 @@ export function TranscriptionProgressPanel({
       <div className="transcription-progress-foot">
         <span className="inline-flex min-w-0 items-center gap-1 truncate">
           <ClockIcon className="size-3.5 shrink-0" />
-          已用 {formatDuration(progress.elapsedMs)}
+          已用 {formatDuration(elapsedMs)}
         </span>
       </div>
     </div>
