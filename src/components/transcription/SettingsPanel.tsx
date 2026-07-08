@@ -9,6 +9,7 @@ import type {
 export function SettingsPanel({
   models,
   downloadProgress,
+  downloadMovingAverageSpeedBytesPerSec,
   isDownloading,
   deletingModelId,
   isTranscribing,
@@ -19,6 +20,7 @@ export function SettingsPanel({
 }: {
   models: ModelStatus[];
   downloadProgress: DownloadProgress | null;
+  downloadMovingAverageSpeedBytesPerSec: number;
   isDownloading: boolean;
   deletingModelId: string | null;
   isTranscribing: boolean;
@@ -32,6 +34,9 @@ export function SettingsPanel({
       <ModelPanel
         models={models}
         downloadProgress={downloadProgress}
+        downloadMovingAverageSpeedBytesPerSec={
+          downloadMovingAverageSpeedBytesPerSec
+        }
         isDownloading={isDownloading}
         deletingModelId={deletingModelId}
         isTranscribing={isTranscribing}

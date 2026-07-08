@@ -317,6 +317,13 @@
   padding-right: 2px;
 }
 
+.task-model-download {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .task-draft-files {
   height: 160px;
   border: 1px solid var(--border);

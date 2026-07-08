@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import {
   ArchiveIcon,
   CheckCircle2Icon,
+  DownloadIcon,
   FileAudioIcon,
   FolderOpenIcon,
   RotateCcwIcon,
@@ -71,9 +72,15 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { TranscriptionProgressPanel } from "@/components/transcription/TranscriptionProgressPanel";
 import { languageItems } from "@/lib/app-constants";
-import { basename, formatDuration, formatTimestamp } from "@/lib/format";
+import {
+  basename,
+  formatBytes,
+  formatDuration,
+  formatTimestamp,
+} from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type {
+  DownloadProgress,
   ModelStatus,
   TaskDraft,
   TaskStatus,
@@ -113,12 +120,18 @@ export function TaskManagerPanel({
   draftModel,
   canConfirmTasks,
   isConfirmingTasks,
+  isDownloading,
   isTaskDialogOpen,
+  isModelDownloadDialogOpen,
+  modelDownloadError,
+  downloadProgress,
+  downloadMovingAverageSpeedBytesPerSec,
   isDraggingFiles,
   onPickFiles,
   onPickOutputDir,
   onTaskDraftChange,
   onTaskDialogOpenChange,
+  onModelDownloadDialogOpenChange,
   onConfirmTaskDraft,
   onRemoveTask,
   onRetryTask,
@@ -129,12 +142,18 @@ export function TaskManagerPanel({
   draftModel: ModelStatus | undefined;
   canConfirmTasks: boolean;
   isConfirmingTasks: boolean;
+  isDownloading: boolean;
   isTaskDialogOpen: boolean;
+  isModelDownloadDialogOpen: boolean;
+  modelDownloadError: string | null;
+  downloadProgress: DownloadProgress | null;
+  downloadMovingAverageSpeedBytesPerSec: number;
   isDraggingFiles: boolean;
   onPickFiles: () => void;
   onPickOutputDir: () => void;
   onTaskDraftChange: Dispatch<SetStateAction<TaskDraft>>;
   onTaskDialogOpenChange: (open: boolean) => void;
+  onModelDownloadDialogOpenChange: (open: boolean) => void;
   onConfirmTaskDraft: () => void;
   onRemoveTask: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
@@ -152,6 +171,8 @@ export function TaskManagerPanel({
   const selectedLanguage =
     languageItems.find((item) => item.value === taskDraft.options.language) ??
     languageItems[0];
+  const taskModelDownloadProgress =
+    downloadProgress?.modelId === taskDraft.modelId ? downloadProgress : null;
 
   useEffect(() => {
     if (!selectedTaskId || tasks.some((task) => task.id === selectedTaskId)) {
@@ -451,6 +472,87 @@ export function TaskManagerPanel({
                 <CheckCircle2Icon data-icon="inline-start" />
               )}
               {isConfirmingTasks ? "加入中" : "加入佇列"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={isModelDownloadDialogOpen}
+        onOpenChange={(open) => {
+          if (isConfirmingTasks || isDownloading) return;
+          onModelDownloadDialogOpenChange(open);
+        }}
+        disablePointerDismissal={isConfirmingTasks || isDownloading}
+      >
+        <DialogContent showCloseButton={!isConfirmingTasks && !isDownloading}>
+          <DialogHeader>
+            <DialogTitle>下載模型</DialogTitle>
+            <DialogDescription>
+              {draftModel
+                ? `新增任務需要先下載 ${draftModel.title}；完成後會自動加入佇列。`
+                : "新增任務需要先下載模型；完成後會自動加入佇列。"}
+            </DialogDescription>
+          </DialogHeader>
+
+          {modelDownloadError ? (
+            <Alert variant="destructive">
+              <TriangleAlertIcon />
+              <AlertTitle>模型下載失敗</AlertTitle>
+              <AlertDescription>{modelDownloadError}</AlertDescription>
+            </Alert>
+          ) : (
+            <div className="task-model-download">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="truncate">
+                  {taskModelDownloadProgress?.message ?? "準備下載模型"}
+                </span>
+                <span className="tabular-nums text-muted-foreground">
+                  {taskModelDownloadProgress
+                    ? `${formatBytes(downloadMovingAverageSpeedBytesPerSec)}/s`
+                    : "等待中"}
+                </span>
+              </div>
+              <Progress value={taskModelDownloadProgress?.percent ?? 0}>
+                <span className="ml-auto text-sm tabular-nums text-muted-foreground">
+                  {(taskModelDownloadProgress?.percent ?? 0).toFixed(0)}%
+                </span>
+              </Progress>
+              <div className="truncate text-xs text-muted-foreground">
+                {taskModelDownloadProgress
+                  ? `${taskModelDownloadProgress.currentFile ?? "模型"} · ${
+                      taskModelDownloadProgress.fileIndex
+                    }/${taskModelDownloadProgress.totalFiles} · ${formatBytes(
+                      taskModelDownloadProgress.fileBytesCompleted,
+                    )} / ${formatBytes(taskModelDownloadProgress.fileTotalBytes)}`
+                  : draftModel?.sizeHint ?? "模型檔案"}
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={isConfirmingTasks || isDownloading}
+              onClick={() => onModelDownloadDialogOpenChange(false)}
+            >
+              回到任務設定
+            </Button>
+            <Button
+              disabled={
+                isConfirmingTasks ||
+                isDownloading ||
+                !modelDownloadError ||
+                !canConfirmTasks
+              }
+              onClick={onConfirmTaskDraft}
+            >
+              {isConfirmingTasks || isDownloading ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <DownloadIcon data-icon="inline-start" />
+              )}
+              {modelDownloadError ? "重新下載並加入佇列" : "下載中"}
             </Button>
           </DialogFooter>
         </DialogContent>

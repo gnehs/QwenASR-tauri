@@ -33,6 +33,7 @@ import type { DownloadProgress, ModelStatus } from "@/types/transcription";
 export function ModelPanel({
   models,
   downloadProgress,
+  downloadMovingAverageSpeedBytesPerSec,
   isDownloading,
   deletingModelId,
   isTranscribing,
@@ -42,6 +43,7 @@ export function ModelPanel({
 }: {
   models: ModelStatus[];
   downloadProgress: DownloadProgress | null;
+  downloadMovingAverageSpeedBytesPerSec: number;
   isDownloading: boolean;
   deletingModelId: string | null;
   isTranscribing: boolean;
@@ -61,7 +63,7 @@ export function ModelPanel({
           模型
         </h2>
         <p className="settings-section-description">
-          下載或移除可用的 QwenASR 模型。
+          在這裡管理 QwenASR 模型。
         </p>
       </div>
       <div className="settings-section-content">
@@ -199,12 +201,12 @@ export function ModelPanel({
           </div>
         )}
 
-        {downloadProgress ? (
+        {downloadProgress && isDownloading ? (
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between gap-3 text-sm">
               <span className="truncate">{downloadProgress.message}</span>
               <span className="tabular-nums text-muted-foreground">
-                {formatBytes(downloadProgress.speedBytesPerSec)}/s
+                {formatBytes(downloadMovingAverageSpeedBytesPerSec)}/s
               </span>
             </div>
             <Progress value={downloadProgress.percent}>

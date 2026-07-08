@@ -30,6 +30,20 @@ const supportedExtensions = new Set(
   ),
 );
 let notificationPermissionRequested = false;
+const downloadSpeedWindowMs = 5000;
+
+type DownloadSpeedSample = {
+  timestamp: number;
+  completedBytes: number;
+};
+
+type DownloadSpeedMovingAverageTracker = {
+  modelId: string;
+  currentFile: string | null;
+  completedBeforeCurrentFile: number;
+  currentFileCompleted: number;
+  samples: DownloadSpeedSample[];
+};
 
 function readStoredSelectedModelId() {
   try {
@@ -69,6 +83,74 @@ function buildOptionsPayload(task: TranscriptionTask) {
     writeSrt: task.options.writeSrt,
     outputDir: task.outputDir || null,
   };
+}
+
+function movingAverageDownloadSpeed(
+  progress: DownloadProgress,
+  now: number,
+  previous: DownloadSpeedMovingAverageTracker | null,
+) {
+  let tracker = previous;
+  const completedBytes = Math.max(0, progress.fileBytesCompleted);
+
+  if (
+    !tracker ||
+    tracker.modelId !== progress.modelId ||
+    progress.state === "starting"
+  ) {
+    tracker = {
+      modelId: progress.modelId,
+      currentFile: progress.currentFile,
+      completedBeforeCurrentFile: 0,
+      currentFileCompleted: completedBytes,
+      samples: [],
+    };
+  } else {
+    const nextFile = progress.currentFile;
+
+    if (nextFile && tracker.currentFile && nextFile !== tracker.currentFile) {
+      tracker = {
+        ...tracker,
+        currentFile: nextFile,
+        completedBeforeCurrentFile:
+          tracker.completedBeforeCurrentFile + tracker.currentFileCompleted,
+        currentFileCompleted: completedBytes,
+      };
+    } else {
+      tracker = {
+        ...tracker,
+        currentFile: tracker.currentFile ?? nextFile,
+        currentFileCompleted: Math.max(
+          tracker.currentFileCompleted,
+          completedBytes,
+        ),
+      };
+    }
+  }
+
+  const totalCompletedBytes =
+    tracker.completedBeforeCurrentFile + tracker.currentFileCompleted;
+  const windowStart = now - downloadSpeedWindowMs;
+  const samples = [
+    ...tracker.samples.filter((sample) => sample.timestamp >= windowStart),
+    { timestamp: now, completedBytes: totalCompletedBytes },
+  ];
+  const firstSample = samples[0];
+  const lastSample = samples[samples.length - 1];
+  const elapsedSeconds =
+    firstSample && lastSample
+      ? Math.max((lastSample.timestamp - firstSample.timestamp) / 1000, 0)
+      : 0;
+  const speedBytesPerSec =
+    elapsedSeconds > 0
+      ? Math.max(
+          0,
+          (lastSample.completedBytes - firstSample.completedBytes) /
+            elapsedSeconds,
+        )
+      : 0;
+
+  return { tracker: { ...tracker, samples }, speedBytesPerSec };
 }
 
 async function sendTaskNotification(
@@ -121,12 +203,23 @@ export function useTranscriptionWorkspace() {
   const [tasks, setTasks] = useState<TranscriptionTask[]>([]);
   const [downloadProgress, setDownloadProgress] =
     useState<DownloadProgress | null>(null);
+  const [
+    downloadMovingAverageSpeedBytesPerSec,
+    setDownloadMovingAverageSpeedBytesPerSec,
+  ] = useState(0);
   const [transcriptionProgress, setTranscriptionProgress] =
     useState<TranscriptionProgress | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isConfirmingTasks, setIsConfirmingTasks] = useState(false);
+  const [isTaskModelDownloadDialogOpen, setTaskModelDownloadDialogOpen] =
+    useState(false);
+  const [taskModelDownloadError, setTaskModelDownloadError] = useState<
+    string | null
+  >(null);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const runningTaskIdRef = useRef<string | null>(null);
+  const downloadSpeedMovingAverageRef =
+    useRef<DownloadSpeedMovingAverageTracker | null>(null);
 
   const selectedModel = models.find((model) => model.id === selectedModelId);
   const draftModel = models.find((model) => model.id === taskDraft.modelId);
@@ -253,6 +346,13 @@ export function useTranscriptionWorkspace() {
 
     const unlisteners = Promise.all([
       listen<DownloadProgress>("model-download-progress", (event) => {
+        const averaged = movingAverageDownloadSpeed(
+          event.payload,
+          Date.now(),
+          downloadSpeedMovingAverageRef.current,
+        );
+        downloadSpeedMovingAverageRef.current = averaged.tracker;
+        setDownloadMovingAverageSpeedBytesPerSec(averaged.speedBytesPerSec);
         setDownloadProgress(event.payload);
         if (event.payload.state === "complete") {
           setIsDownloading(false);
@@ -401,6 +501,8 @@ export function useTranscriptionWorkspace() {
   async function downloadModel(modelId: string) {
     setIsDownloading(true);
     setDownloadProgress(null);
+    setDownloadMovingAverageSpeedBytesPerSec(0);
+    downloadSpeedMovingAverageRef.current = null;
     try {
       const downloadedModel = await invoke<ModelStatus>("download_model", {
         modelId,
@@ -460,6 +562,8 @@ export function useTranscriptionWorkspace() {
       );
       await refreshModels();
       setDownloadProgress(null);
+      setDownloadMovingAverageSpeedBytesPerSec(0);
+      downloadSpeedMovingAverageRef.current = null;
       toast.success("模型已刪除");
       return true;
     } catch (error) {
@@ -473,11 +577,17 @@ export function useTranscriptionWorkspace() {
   async function confirmTaskDraft() {
     if (!canConfirmTasks || !draftModel) return;
 
+    const needsDownload = !draftModel.installed;
     setIsConfirmingTasks(true);
+    setTaskModelDownloadError(null);
+    if (needsDownload) {
+      setTaskModelDownloadDialogOpen(true);
+    }
+
     try {
       let readyModel = draftModel;
 
-      if (!draftModel.installed) {
+      if (needsDownload) {
         readyModel = await downloadModel(draftModel.id);
       }
 
@@ -505,8 +615,12 @@ export function useTranscriptionWorkspace() {
       setOptions(taskDraft.options);
       setOutputDir(taskDraft.outputDir);
       setTaskDialogOpen(false);
+      setTaskModelDownloadDialogOpen(false);
       toast.success(`已加入 ${nextTasks.length} 個轉錄任務`);
-    } catch {
+    } catch (error) {
+      setTaskModelDownloadError(
+        error instanceof Error ? error.message : formatInvokeError(error),
+      );
       // Error toast is emitted by downloadModel.
     } finally {
       setIsConfirmingTasks(false);
@@ -560,9 +674,12 @@ export function useTranscriptionWorkspace() {
     outputDir,
     options,
     downloadProgress,
+    downloadMovingAverageSpeedBytesPerSec,
     transcriptionProgress,
     isDownloading,
     isConfirmingTasks,
+    isTaskModelDownloadDialogOpen,
+    taskModelDownloadError,
     deletingModelId,
     isTranscribing,
     isTaskDialogOpen,
@@ -576,6 +693,7 @@ export function useTranscriptionWorkspace() {
     setSelectedModelId,
     setTaskDraft,
     setTaskDialogOpen,
+    setTaskModelDownloadDialogOpen,
     pickFilesForTasks,
     pickTaskOutputDir,
     confirmTaskDraft,

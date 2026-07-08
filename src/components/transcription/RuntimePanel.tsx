@@ -17,7 +17,7 @@ export function RuntimePanel({ ffmpeg }: { ffmpeg: FfmpegStatus }) {
         <h2 id="runtime-panel-title" className="settings-section-title">
           工具狀態
         </h2>
-        <p className="settings-section-description">轉檔與音訊正規化能力。</p>
+        <p className="settings-section-description">將音訊轉換為支援的格式。</p>
       </div>
       <div className="settings-section-content">
         <Card size="sm">

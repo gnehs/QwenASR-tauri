@@ -18,11 +18,11 @@ import "./App.css";
 const viewCopy: Record<WorkspaceView, { title: string; subtitle: string }> = {
   tasks: {
     title: "轉錄任務",
-    subtitle: "單一檔案與多檔批次會進入同一個佇列依序處理。",
+    subtitle: "在這裡管理你的轉錄任務。",
   },
   settings: {
     title: "設定",
-    subtitle: "管理 QwenASR 模型下載器與 FFmpeg 轉檔工具。",
+    subtitle: "管理模型與相關工具。",
   },
 };
 
@@ -93,12 +93,24 @@ function App() {
                     draftModel={workspace.draftModel}
                     canConfirmTasks={workspace.canConfirmTasks}
                     isConfirmingTasks={workspace.isConfirmingTasks}
+                    isDownloading={workspace.isDownloading}
                     isTaskDialogOpen={workspace.isTaskDialogOpen}
+                    isModelDownloadDialogOpen={
+                      workspace.isTaskModelDownloadDialogOpen
+                    }
+                    modelDownloadError={workspace.taskModelDownloadError}
+                    downloadProgress={workspace.downloadProgress}
+                    downloadMovingAverageSpeedBytesPerSec={
+                      workspace.downloadMovingAverageSpeedBytesPerSec
+                    }
                     isDraggingFiles={workspace.isDraggingFiles}
                     onPickFiles={workspace.pickFilesForTasks}
                     onPickOutputDir={workspace.pickTaskOutputDir}
                     onTaskDraftChange={workspace.setTaskDraft}
                     onTaskDialogOpenChange={workspace.setTaskDialogOpen}
+                    onModelDownloadDialogOpenChange={
+                      workspace.setTaskModelDownloadDialogOpen
+                    }
                     onConfirmTaskDraft={workspace.confirmTaskDraft}
                     onRemoveTask={workspace.removeTask}
                     onRetryTask={workspace.retryTask}
@@ -108,6 +120,9 @@ function App() {
                   <SettingsPanel
                     models={workspace.models}
                     downloadProgress={workspace.downloadProgress}
+                    downloadMovingAverageSpeedBytesPerSec={
+                      workspace.downloadMovingAverageSpeedBytesPerSec
+                    }
                     isDownloading={workspace.isDownloading}
                     deletingModelId={workspace.deletingModelId}
                     isTranscribing={workspace.isTranscribing}
