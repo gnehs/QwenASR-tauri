@@ -27,12 +27,17 @@ const MIN_SEGMENT_MS: u64 = 900;
 const CHINESE_ASR_LANGUAGE: &str = "Chinese";
 const TRADITIONAL_CHINESE_LANGUAGE: &str = "chinese";
 const SIMPLIFIED_CHINESE_LANGUAGE: &str = "chinese (simplified)";
-const VAD_PHASE_START: f64 = 0.12;
+const PREPARE_PROGRESS_PERCENT: f64 = 2.0;
+const MODEL_LOAD_PROGRESS_PERCENT: f64 = 8.0;
+const TRANSCRIPTION_WORK_START_PERCENT: f64 = MODEL_LOAD_PROGRESS_PERCENT;
+const TRANSCRIPTION_WORK_END_PERCENT: f64 = 99.0;
+const VAD_PHASE_START: f64 = 0.0;
 const VAD_PHASE_RATIO: f64 = 0.05;
 const VAD_PHASE_END: f64 = VAD_PHASE_START + VAD_PHASE_RATIO;
 const TRANSCRIBE_PHASE_START: f64 = VAD_PHASE_END;
 const TRANSCRIBE_PHASE_END: f64 = 0.99;
 const FINALIZE_PHASE_START: f64 = TRANSCRIBE_PHASE_END;
+const ASR_CHUNK_OVERHEAD_MS: u64 = 500;
 static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
 const ASR_LANGUAGES: &[&str] = &[
     "Chinese",
@@ -131,7 +136,7 @@ fn transcribe_file_inner(
         Some(&request.audio_path),
         1,
         1,
-        2.0,
+        PREPARE_PROGRESS_PERCENT,
         None,
     );
 
@@ -146,12 +151,12 @@ fn transcribe_file_inner(
         Some(&request.audio_path),
         1,
         1,
-        8.0,
+        MODEL_LOAD_PROGRESS_PERCENT,
         None,
     );
 
     let engine = load_engine(&model_path)?;
-    let result = transcribe_with_context(
+    let mut result = transcribe_with_context(
         app,
         started,
         &engine,
@@ -159,9 +164,10 @@ fn transcribe_file_inner(
         &request.options,
         1,
         1,
-        12.0,
-        98.0,
+        TRANSCRIPTION_WORK_START_PERCENT,
+        TRANSCRIPTION_WORK_END_PERCENT,
     )?;
+    result.duration_ms = started.elapsed().as_millis();
 
     emit_progress(
         app,
@@ -212,7 +218,7 @@ pub fn transcribe_batch(
         None,
         0,
         request.audio_paths.len(),
-        2.0,
+        PREPARE_PROGRESS_PERCENT,
         None,
     );
 
@@ -227,7 +233,7 @@ pub fn transcribe_batch(
         None,
         0,
         request.audio_paths.len(),
-        8.0,
+        MODEL_LOAD_PROGRESS_PERCENT,
         None,
     );
 
@@ -237,8 +243,16 @@ pub fn transcribe_batch(
 
     for (index, audio_path) in request.audio_paths.iter().enumerate() {
         let file_index = index + 1;
-        let range_start = 10.0 + (index as f64 / total as f64) * 88.0;
-        let range_end = 10.0 + (file_index as f64 / total as f64) * 88.0;
+        let range_start = progress_between(
+            TRANSCRIPTION_WORK_START_PERCENT,
+            TRANSCRIPTION_WORK_END_PERCENT,
+            index as f64 / total as f64,
+        );
+        let range_end = progress_between(
+            TRANSCRIPTION_WORK_START_PERCENT,
+            TRANSCRIPTION_WORK_END_PERCENT,
+            file_index as f64 / total as f64,
+        );
 
         let result = match transcribe_with_context(
             &app,
@@ -346,12 +360,12 @@ fn emit_progress_with_metrics(
     metrics: Option<ProgressMetrics>,
 ) {
     let percent = clamp_percent(percent);
+    let metrics = metrics.unwrap_or_default();
     let eta_ms = match state {
         "complete" => Some(0),
         "error" => None,
-        _ => eta_ms.or_else(|| estimate_eta(started, percent)),
+        _ => eta_ms,
     };
-    let metrics = metrics.unwrap_or_default();
 
     let _ = app.emit(
         TRANSCRIPTION_PROGRESS_EVENT,
@@ -391,6 +405,7 @@ fn emit_chunk_progress(
     total_speech_ms: u64,
     skipped_silence_ms: u64,
     percent: f64,
+    eta_ms: Option<u128>,
     phase: &str,
     message: &str,
 ) {
@@ -405,7 +420,7 @@ fn emit_chunk_progress(
         file_index,
         total_files,
         percent,
-        None,
+        eta_ms,
         Some(ProgressMetrics {
             chunk_index: Some(chunk_index),
             total_chunks: Some(total_chunks),
@@ -430,18 +445,27 @@ fn progress_between(start: f64, end: f64, ratio: f64) -> f64 {
     start + (end - start).max(0.0) * ratio.clamp(0.0, 1.0)
 }
 
-fn estimate_eta(started: Instant, percent: f64) -> Option<u128> {
-    if !(1.0..99.0).contains(&percent) {
-        return None;
-    }
-
+fn estimate_remaining_ms(started: Instant, processed_ms: u64, total_ms: u64) -> Option<u128> {
     let elapsed_ms = started.elapsed().as_millis();
     if elapsed_ms < 800 {
         return None;
     }
 
+    estimate_remaining_ms_from_elapsed(elapsed_ms, processed_ms, total_ms)
+}
+
+fn estimate_remaining_ms_from_elapsed(
+    elapsed_ms: u128,
+    processed_ms: u64,
+    total_ms: u64,
+) -> Option<u128> {
+    if processed_ms == 0 || processed_ms >= total_ms {
+        return None;
+    }
+
     let elapsed = elapsed_ms as f64;
-    let remaining = elapsed * ((100.0 - percent) / percent);
+    let remaining_ms = total_ms.saturating_sub(processed_ms);
+    let remaining = elapsed * (remaining_ms as f64 / processed_ms as f64);
     Some(remaining.max(0.0).round() as u128)
 }
 
@@ -556,9 +580,11 @@ fn transcribe_with_context(
     let total_chunk_audio_ms = vad_analysis.chunk_audio_ms.max(1);
     let skipped_silence_ms = vad_analysis.skipped_silence_ms;
     let mut processed_audio_ms = 0u64;
+    let mut processed_asr_work_ms = 0u64;
     let mut transcript_parts = Vec::with_capacity(chunks.len());
     let mut segments = Vec::new();
     let total_chunks = chunks.len();
+    let total_asr_work_ms = total_chunk_work_ms(&chunks);
     let vad_message = if skipped_silence_ms > 0 {
         format!(
             "找到 {total_chunks} 個有聲片段，將跳過 {} 靜音",
@@ -593,15 +619,18 @@ fn transcribe_with_context(
     let output_language = normalize_output_language(options.language.as_deref());
     let asr_language = normalize_asr_language(output_language.as_deref());
     let language_forced = asr_language.is_some();
+    let asr_started = Instant::now();
 
     for (index, chunk) in chunks.iter().enumerate() {
         let chunk_index = index + 1;
-        let before_ratio = processed_audio_ms as f64 / total_chunk_audio_ms as f64;
+        let before_ratio = processed_asr_work_ms as f64 / total_asr_work_ms as f64;
         let before_percent = progress_between(
             progress_between(range_start, range_end, TRANSCRIBE_PHASE_START),
             progress_between(range_start, range_end, TRANSCRIBE_PHASE_END),
             before_ratio,
         );
+        let before_eta_ms =
+            estimate_remaining_ms(asr_started, processed_asr_work_ms, total_asr_work_ms);
         emit_chunk_progress(
             app,
             progress_started,
@@ -615,6 +644,7 @@ fn transcribe_with_context(
             total_chunk_audio_ms,
             skipped_silence_ms,
             before_percent,
+            before_eta_ms,
             "transcribingSegments",
             &format!("轉錄第 {chunk_index} / {total_chunks} 個有聲片段"),
         );
@@ -643,12 +673,15 @@ fn transcribe_with_context(
         }
 
         processed_audio_ms = processed_audio_ms.saturating_add(chunk.duration_ms());
-        let after_ratio = processed_audio_ms as f64 / total_chunk_audio_ms as f64;
+        processed_asr_work_ms = processed_asr_work_ms.saturating_add(chunk_work_ms(*chunk));
+        let after_ratio = processed_asr_work_ms as f64 / total_asr_work_ms as f64;
         let after_percent = progress_between(
             progress_between(range_start, range_end, TRANSCRIBE_PHASE_START),
             progress_between(range_start, range_end, TRANSCRIBE_PHASE_END),
             after_ratio,
         );
+        let after_eta_ms =
+            estimate_remaining_ms(asr_started, processed_asr_work_ms, total_asr_work_ms);
         emit_chunk_progress(
             app,
             progress_started,
@@ -662,6 +695,7 @@ fn transcribe_with_context(
             total_chunk_audio_ms,
             skipped_silence_ms,
             after_percent,
+            after_eta_ms,
             "transcribingSegments",
             &format!("完成第 {chunk_index} / {total_chunks} 個有聲片段"),
         );
@@ -687,7 +721,7 @@ fn transcribe_with_context(
         file_index,
         total_files,
         finalize_percent,
-        None,
+        Some(0),
         Some(ProgressMetrics {
             chunk_index: Some(total_chunks),
             total_chunks: Some(total_chunks),
@@ -717,7 +751,7 @@ fn transcribe_with_context(
         file_index,
         total_files,
         range_end,
-        None,
+        Some(0),
     );
 
     Ok(TranscriptionResult {
@@ -727,6 +761,18 @@ fn transcribe_with_context(
         srt_path,
         duration_ms: started.elapsed().as_millis(),
     })
+}
+
+fn total_chunk_work_ms(chunks: &[AudioRange]) -> u64 {
+    chunks
+        .iter()
+        .map(|chunk| chunk_work_ms(*chunk))
+        .sum::<u64>()
+        .max(1)
+}
+
+fn chunk_work_ms(chunk: AudioRange) -> u64 {
+    chunk.duration_ms().saturating_add(ASR_CHUNK_OVERHEAD_MS)
 }
 
 fn write_chunk_audio(samples: &[i16], chunk: AudioRange) -> AppResult<audio::PreparedAudio> {
@@ -1021,9 +1067,43 @@ mod tests {
 
     #[test]
     fn allocates_vad_to_five_percent_and_gives_remaining_progress_to_asr() {
+        assert_roughly_eq(
+            TRANSCRIPTION_WORK_START_PERCENT,
+            MODEL_LOAD_PROGRESS_PERCENT,
+        );
+        assert_roughly_eq(VAD_PHASE_START, 0.0);
         assert_roughly_eq(VAD_PHASE_END - VAD_PHASE_START, 0.05);
         assert_roughly_eq(TRANSCRIBE_PHASE_START, VAD_PHASE_END);
         assert_roughly_eq(FINALIZE_PHASE_START, TRANSCRIBE_PHASE_END);
+    }
+
+    #[test]
+    fn weights_asr_progress_by_audio_duration_and_chunk_overhead() {
+        let one_second = audio::ASR_SAMPLE_RATE as usize;
+        let chunks = vec![
+            AudioRange::new(0, one_second),
+            AudioRange::new(one_second, one_second * 3),
+        ];
+
+        assert_eq!(chunk_work_ms(chunks[0]), 1_000 + ASR_CHUNK_OVERHEAD_MS);
+        assert_eq!(chunk_work_ms(chunks[1]), 2_000 + ASR_CHUNK_OVERHEAD_MS);
+        assert_eq!(
+            total_chunk_work_ms(&chunks),
+            3_000 + ASR_CHUNK_OVERHEAD_MS * 2
+        );
+    }
+
+    #[test]
+    fn estimates_eta_from_observed_asr_work() {
+        assert_eq!(
+            estimate_remaining_ms_from_elapsed(10_000, 25_000, 100_000),
+            Some(30_000)
+        );
+        assert_eq!(estimate_remaining_ms_from_elapsed(10_000, 0, 100_000), None);
+        assert_eq!(
+            estimate_remaining_ms_from_elapsed(10_000, 100_000, 100_000),
+            None
+        );
     }
 
     #[test]

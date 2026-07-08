@@ -362,7 +362,7 @@ export function useTranscriptionWorkspace() {
         const progressUpdatedAt = Date.now();
 
         setTranscriptionProgress(event.payload);
-        if (runningTaskId) {
+        if (runningTaskId && event.payload.state !== "error") {
           setTasks((current) =>
             current.map((task) =>
               task.id === runningTaskId

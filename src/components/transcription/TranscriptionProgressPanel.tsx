@@ -17,6 +17,13 @@ const phaseLabels: Record<string, string> = {
   error: "失敗",
 };
 
+const etaPendingLabels: Record<string, string> = {
+  preparing: "ETA 待推論",
+  loadingModel: "ETA 待推論",
+  loadingAudio: "ETA 待推論",
+  analyzingAudio: "ETA 待推論",
+};
+
 export function TranscriptionProgressPanel({
   progress,
 }: {
@@ -53,6 +60,10 @@ export function TranscriptionProgressPanel({
       ? `第 ${progress.fileIndex} / ${progress.totalFiles} 個檔案`
       : phaseLabel;
   const detailLine = [fileProgress, chunkProgress].filter(Boolean).join(" · ");
+  const etaLabel =
+    progress.etaMs == null
+      ? (etaPendingLabels[progress.phase] ?? "ETA 估算中")
+      : `ETA ${formatDuration(progress.etaMs)}`;
 
   return (
     <div className="transcription-progress">
@@ -69,9 +80,7 @@ export function TranscriptionProgressPanel({
           <span className="text-sm font-medium tabular-nums">
             {percent.toFixed(0)}%
           </span>
-          <span className="text-xs text-muted-foreground">
-            ETA {progress.etaMs == null ? "估算中" : formatDuration(progress.etaMs)}
-          </span>
+          <span className="text-xs text-muted-foreground">{etaLabel}</span>
         </div>
       </div>
       <Progress value={percent} aria-label="轉錄進度" />

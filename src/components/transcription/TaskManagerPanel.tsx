@@ -633,7 +633,9 @@ function TaskDetail({ task }: { task: TranscriptionTask }) {
               {result.srtPath ? `SRT: ${result.srtPath}` : "未輸出 SRT"}
             </div>
           </div>
-          <Badge variant="outline">{formatDuration(result.durationMs)}</Badge>
+          <Badge variant="outline">
+            總處理 {formatDuration(result.durationMs)}
+          </Badge>
         </div>
         <Textarea readOnly value={result.text} className="min-h-36 resize-none" />
         <Table>
