@@ -337,6 +337,12 @@
   gap: 12px;
 }
 
+.srt-preview-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
 .task-dialog {
   width: min(680px, calc(100vw - 2rem));
   max-width: min(680px, calc(100vw - 2rem));

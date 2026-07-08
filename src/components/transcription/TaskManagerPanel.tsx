@@ -649,7 +649,7 @@ function TaskDetail({ task }: { task: TranscriptionTask }) {
                 <TableCell className="whitespace-nowrap text-muted-foreground">
                   {formatTimestamp(segment.startMs)}
                 </TableCell>
-                <TableCell>{segment.text}</TableCell>
+                <TableCell className="srt-preview-text">{segment.text}</TableCell>
               </TableRow>
             ))}
           </TableBody>
