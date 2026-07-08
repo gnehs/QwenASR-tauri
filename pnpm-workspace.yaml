@@ -1,2 +1,3 @@
 allowBuilds:
+  '@ibm/plex-sans-tc': false
   esbuild: true
