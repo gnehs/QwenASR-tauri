@@ -27,10 +27,12 @@ const MIN_SEGMENT_MS: u64 = 900;
 const CHINESE_ASR_LANGUAGE: &str = "Chinese";
 const TRADITIONAL_CHINESE_LANGUAGE: &str = "chinese";
 const SIMPLIFIED_CHINESE_LANGUAGE: &str = "chinese (simplified)";
-const TRANSCRIBE_PHASE_START: f64 = 0.22;
-const TRANSCRIBE_PHASE_END: f64 = 0.84;
 const VAD_PHASE_START: f64 = 0.12;
-const VAD_PHASE_END: f64 = 0.20;
+const VAD_PHASE_RATIO: f64 = 0.05;
+const VAD_PHASE_END: f64 = VAD_PHASE_START + VAD_PHASE_RATIO;
+const TRANSCRIBE_PHASE_START: f64 = VAD_PHASE_END;
+const TRANSCRIBE_PHASE_END: f64 = 0.99;
+const FINALIZE_PHASE_START: f64 = TRANSCRIBE_PHASE_END;
 static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
 const ASR_LANGUAGES: &[&str] = &[
     "Chinese",
@@ -665,7 +667,7 @@ fn transcribe_with_context(
         );
     }
 
-    let finalize_percent = progress_between(range_start, range_end, 0.88);
+    let finalize_percent = progress_between(range_start, range_end, FINALIZE_PHASE_START);
     emit_progress_with_metrics(
         app,
         progress_started,
@@ -1008,6 +1010,21 @@ fn weighted_char_count(text: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn assert_roughly_eq(actual: f64, expected: f64) {
+        let difference = (actual - expected).abs();
+        assert!(
+            difference < 0.000_001,
+            "expected {actual} to be roughly {expected}, difference {difference}"
+        );
+    }
+
+    #[test]
+    fn allocates_vad_to_five_percent_and_gives_remaining_progress_to_asr() {
+        assert_roughly_eq(VAD_PHASE_END - VAD_PHASE_START, 0.05);
+        assert_roughly_eq(TRANSCRIBE_PHASE_START, VAD_PHASE_END);
+        assert_roughly_eq(FINALIZE_PHASE_START, TRANSCRIBE_PHASE_END);
+    }
 
     #[test]
     fn parses_auto_language_without_eating_text_prefix() {
