@@ -14,6 +14,15 @@ use crate::models::FfmpegStatus;
 pub const ASR_SAMPLE_RATE: u32 = 16_000;
 const MIN_ASR_SAMPLES: u32 = 320;
 const TEMP_AUDIO_DIR: &str = "qwenasr-tauri";
+const FFMPEG_COMMAND: &str = "ffmpeg";
+
+#[cfg(target_os = "macos")]
+const MACOS_FFMPEG_PATHS: &[&str] = &[
+    "/opt/homebrew/bin/ffmpeg",
+    "/usr/local/bin/ffmpeg",
+    "/opt/local/bin/ffmpeg",
+    "/usr/local/ffmpeg/bin/ffmpeg",
+];
 
 pub struct PreparedAudio {
     normalized_path: PathBuf,
@@ -36,19 +45,16 @@ impl Drop for PreparedAudio {
 }
 
 pub fn ffmpeg_status() -> FfmpegStatus {
-    match Command::new("ffmpeg").arg("-version").output() {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let version = stdout.lines().next().map(|line| line.to_string());
-            FfmpegStatus {
-                available: true,
-                version,
-            }
-        }
-        _ => FfmpegStatus {
-            available: false,
-            version: None,
-        },
+    if let Some(ffmpeg) = resolve_ffmpeg() {
+        return FfmpegStatus {
+            available: true,
+            version: Some(ffmpeg.version),
+        };
+    }
+
+    FfmpegStatus {
+        available: false,
+        version: None,
     }
 }
 
@@ -133,8 +139,9 @@ fn normalize_with_ffmpeg(input: &Path) -> Result<PathBuf, FfmpegError> {
             "Could not create a temporary audio file for normalization: {error}"
         ))
     })?;
+    let ffmpeg = resolve_ffmpeg().ok_or(FfmpegError::Unavailable)?;
 
-    let command_output = Command::new("ffmpeg")
+    let command_output = Command::new(&ffmpeg.program)
         .args(ffmpeg_normalize_args(input, &output))
         .output()
         .map_err(|error| {
@@ -159,6 +166,49 @@ fn normalize_with_ffmpeg(input: &Path) -> Result<PathBuf, FfmpegError> {
     }
 
     Ok(output)
+}
+
+fn resolve_ffmpeg() -> Option<ResolvedFfmpeg> {
+    resolve_ffmpeg_from(ffmpeg_candidates())
+}
+
+fn resolve_ffmpeg_from(candidates: Vec<PathBuf>) -> Option<ResolvedFfmpeg> {
+    candidates.into_iter().find_map(|program| {
+        ffmpeg_version(&program).map(|version| ResolvedFfmpeg { program, version })
+    })
+}
+
+fn ffmpeg_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    push_unique_candidate(&mut candidates, PathBuf::from(FFMPEG_COMMAND));
+
+    #[cfg(target_os = "macos")]
+    for path in MACOS_FFMPEG_PATHS {
+        push_unique_candidate(&mut candidates, PathBuf::from(path));
+    }
+
+    candidates
+}
+
+fn push_unique_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !candidates.iter().any(|existing| existing == &candidate) {
+        candidates.push(candidate);
+    }
+}
+
+fn ffmpeg_version(program: &Path) -> Option<String> {
+    let output = Command::new(program).arg("-version").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Some(stdout.lines().next().unwrap_or(FFMPEG_COMMAND).to_string())
+}
+
+struct ResolvedFfmpeg {
+    program: PathBuf,
+    version: String,
 }
 
 fn normalized_audio_path() -> std::io::Result<PathBuf> {
@@ -254,6 +304,36 @@ enum FfmpegError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn resolves_ffmpeg_from_absolute_candidate_path() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = std::env::temp_dir().join(format!("qwenasr-ffmpeg-{}", Uuid::new_v4()));
+        fs::create_dir_all(&directory).unwrap();
+        let fake_ffmpeg = directory.join(FFMPEG_COMMAND);
+        fs::write(&fake_ffmpeg, "#!/bin/sh\necho 'ffmpeg version test'\n").unwrap();
+        fs::set_permissions(&fake_ffmpeg, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let resolved =
+            resolve_ffmpeg_from(vec![directory.join("missing-ffmpeg"), fake_ffmpeg.clone()])
+                .unwrap();
+
+        assert_eq!(resolved.program, fake_ffmpeg);
+        assert_eq!(resolved.version, "ffmpeg version test");
+
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn includes_common_macos_ffmpeg_install_paths() {
+        let candidates = ffmpeg_candidates();
+
+        assert!(candidates.contains(&PathBuf::from("/opt/homebrew/bin/ffmpeg")));
+        assert!(candidates.contains(&PathBuf::from("/usr/local/bin/ffmpeg")));
+    }
 
     #[test]
     fn builds_ffmpeg_args_for_qwen_asr_wav_input() {
