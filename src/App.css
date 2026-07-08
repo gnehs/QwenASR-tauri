@@ -309,11 +309,37 @@
   min-height: 320px;
 }
 
+.task-running-scroll {
+  min-height: 0;
+  flex: 1;
+}
+
 .task-running-detail {
   display: flex;
   min-width: 0;
   width: 100%;
   flex-direction: column;
+  gap: 14px;
+  padding: 3px 12px 3px 3px;
+}
+
+.task-partial-result {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-partial-result-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-partial-result-text {
+  min-height: 220px;
 }
 
 .task-result-scroll {

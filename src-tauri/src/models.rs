@@ -152,4 +152,5 @@ pub struct TranscriptionProgress {
     pub processed_audio_ms: Option<u64>,
     pub total_speech_ms: Option<u64>,
     pub skipped_silence_ms: Option<u64>,
+    pub partial_transcript: Option<String>,
 }

@@ -342,6 +342,7 @@ struct ProgressMetrics {
     processed_audio_ms: Option<u64>,
     total_speech_ms: Option<u64>,
     skipped_silence_ms: Option<u64>,
+    partial_transcript: Option<String>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -387,6 +388,7 @@ fn emit_progress_with_metrics(
             processed_audio_ms: metrics.processed_audio_ms,
             total_speech_ms: metrics.total_speech_ms,
             skipped_silence_ms: metrics.skipped_silence_ms,
+            partial_transcript: metrics.partial_transcript,
         },
     );
 }
@@ -408,6 +410,7 @@ fn emit_chunk_progress(
     eta_ms: Option<u128>,
     phase: &str,
     message: &str,
+    partial_transcript: Option<String>,
 ) {
     emit_progress_with_metrics(
         app,
@@ -429,6 +432,7 @@ fn emit_chunk_progress(
             processed_audio_ms: Some(processed_audio_ms),
             total_speech_ms: Some(total_speech_ms),
             skipped_silence_ms: Some(skipped_silence_ms),
+            partial_transcript,
         }),
     );
 }
@@ -613,6 +617,7 @@ fn transcribe_with_context(
             processed_audio_ms: Some(0),
             total_speech_ms: Some(total_chunk_audio_ms),
             skipped_silence_ms: Some(skipped_silence_ms),
+            partial_transcript: None,
         }),
     );
 
@@ -647,6 +652,7 @@ fn transcribe_with_context(
             before_eta_ms,
             "transcribingSegments",
             &format!("轉錄第 {chunk_index} / {total_chunks} 個有聲片段"),
+            build_partial_transcript(&transcript_parts),
         );
 
         let chunk_audio = write_chunk_audio(&normalized_samples, *chunk)?;
@@ -698,9 +704,11 @@ fn transcribe_with_context(
             after_eta_ms,
             "transcribingSegments",
             &format!("完成第 {chunk_index} / {total_chunks} 個有聲片段"),
+            build_partial_transcript(&transcript_parts),
         );
     }
 
+    let partial_transcript = build_partial_transcript(&transcript_parts);
     let finalize_percent = progress_between(range_start, range_end, FINALIZE_PHASE_START);
     emit_progress_with_metrics(
         app,
@@ -730,6 +738,7 @@ fn transcribe_with_context(
             processed_audio_ms: Some(total_chunk_audio_ms),
             total_speech_ms: Some(total_chunk_audio_ms),
             skipped_silence_ms: Some(skipped_silence_ms),
+            partial_transcript: partial_transcript.clone(),
         }),
     );
 
@@ -740,7 +749,7 @@ fn transcribe_with_context(
         None
     };
 
-    emit_progress(
+    emit_progress_with_metrics(
         app,
         progress_started,
         "running",
@@ -752,6 +761,16 @@ fn transcribe_with_context(
         total_files,
         range_end,
         Some(0),
+        Some(ProgressMetrics {
+            chunk_index: Some(total_chunks),
+            total_chunks: Some(total_chunks),
+            chunk_start_ms: None,
+            chunk_end_ms: None,
+            processed_audio_ms: Some(total_chunk_audio_ms),
+            total_speech_ms: Some(total_chunk_audio_ms),
+            skipped_silence_ms: Some(skipped_silence_ms),
+            partial_transcript,
+        }),
     );
 
     Ok(TranscriptionResult {
@@ -773,6 +792,21 @@ fn total_chunk_work_ms(chunks: &[AudioRange]) -> u64 {
 
 fn chunk_work_ms(chunk: AudioRange) -> u64 {
     chunk.duration_ms().saturating_add(ASR_CHUNK_OVERHEAD_MS)
+}
+
+fn build_partial_transcript(parts: &[String]) -> Option<String> {
+    let text = parts
+        .iter()
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if text.is_empty() {
+        None
+    } else {
+        Some(text)
+    }
 }
 
 fn write_chunk_audio(samples: &[i16], chunk: AudioRange) -> AppResult<audio::PreparedAudio> {
@@ -1091,6 +1125,17 @@ mod tests {
             total_chunk_work_ms(&chunks),
             3_000 + ASR_CHUNK_OVERHEAD_MS * 2
         );
+    }
+
+    #[test]
+    fn builds_partial_transcript_from_completed_chunks() {
+        let parts = vec!["第一段".to_string(), " ".to_string(), "第二段".to_string()];
+
+        assert_eq!(
+            build_partial_transcript(&parts),
+            Some("第一段\n第二段".to_string())
+        );
+        assert_eq!(build_partial_transcript(&[]), None);
     }
 
     #[test]

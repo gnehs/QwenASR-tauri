@@ -614,10 +614,27 @@ function TaskDetail({ task }: { task: TranscriptionTask }) {
   }
 
   if (task.status === "running") {
+    const partialTranscript = progress?.partialTranscript?.trim() ?? "";
+
     return (
-      <div className="task-running-detail">
-        <TranscriptionProgressPanel progress={progress} />
-      </div>
+      <ScrollArea className="task-running-scroll">
+        <div className="task-running-detail">
+          <TranscriptionProgressPanel progress={progress} />
+          {partialTranscript ? (
+            <div className="task-partial-result">
+              <div className="task-partial-result-head">
+                <div className="text-sm font-medium">途中結果</div>
+                <Badge variant="outline">自動更新</Badge>
+              </div>
+              <Textarea
+                readOnly
+                value={partialTranscript}
+                className="task-partial-result-text resize-none"
+              />
+            </div>
+          ) : null}
+        </div>
+      </ScrollArea>
     );
   }
 
