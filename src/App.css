@@ -536,16 +536,28 @@
   gap: 10px;
 }
 
-.model-card {
+.model-download-footer {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.model-download-progress {
+  gap: 8px;
+}
+
+.model-download-meta {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
   align-items: center;
-  gap: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 14px;
-  background: color-mix(in oklch, var(--card), var(--muted) 22%);
+  gap: 8px 14px;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
 }
 
 .tool-card {
@@ -680,8 +692,7 @@
   }
 
   .workflow-footer,
-  .task-result-meta,
-  .model-card {
+  .task-result-meta {
     grid-template-columns: 1fr;
     align-items: stretch;
   }
@@ -703,5 +714,9 @@
 
   .transcription-progress-stat {
     align-items: flex-start;
+  }
+
+  .model-download-meta {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }

@@ -8,6 +8,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
   Dialog,
   DialogClose,
   DialogContent,
@@ -25,7 +34,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Progress } from "@/components/ui/progress";
+import {
+  Progress,
+  ProgressLabel,
+  ProgressValue,
+} from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format";
 import type { DownloadProgress, ModelStatus } from "@/types/transcription";
@@ -95,8 +108,11 @@ export function ModelPanel({
           <div className="model-list">
             {models.map((model) => {
               const traitBadges = modelTraitBadges[model.id] ?? [];
-              const isActiveDownload =
-                isDownloading && downloadProgress?.modelId === model.id;
+              const activeDownloadProgress =
+                isDownloading && downloadProgress?.modelId === model.id
+                  ? downloadProgress
+                  : null;
+              const isActiveDownload = activeDownloadProgress !== null;
               const isDeletingThisModel = deletingModelId === model.id;
               const isDeleteDialogOpen = deleteDialogModelId === model.id;
               const canDeleteModel =
@@ -106,12 +122,10 @@ export function ModelPanel({
                 !isTranscribing;
 
               return (
-                <div key={model.id} className="model-card">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="truncate text-sm font-medium">
-                        {model.title}
-                      </div>
+                <Card key={model.id} size="sm">
+                  <CardHeader>
+                    <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
+                      <span className="truncate">{model.title}</span>
                       {model.recommended ? (
                         <Badge variant="secondary">建議</Badge>
                       ) : null}
@@ -120,120 +134,149 @@ export function ModelPanel({
                           {trait}
                         </Badge>
                       ))}
-                    </div>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {model.description}
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <Badge variant="outline">{model.sizeHint}</Badge>
-                      <Badge
-                        variant={model.installed ? "secondary" : "outline"}
-                      >
-                        {model.installed ? "已安裝" : "未下載"}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap justify-end gap-2">
-                    {!model.installed ? (
-                      <Button
-                        disabled={
-                          isActiveDownload || isDownloading || isDeletingModel
-                        }
-                        onClick={() => onDownload(model.id)}
-                      >
-                        {isActiveDownload ? (
-                          <Spinner data-icon="inline-start" />
-                        ) : (
-                          <DownloadIcon data-icon="inline-start" />
-                        )}
-                        {isActiveDownload ? "下載中" : "下載模型"}
-                      </Button>
-                    ) : null}
-
-                    {model.installed ? (
-                      <Dialog
-                        open={isDeleteDialogOpen}
-                        onOpenChange={(open) =>
-                          setDeleteDialogModelId(open ? model.id : null)
-                        }
-                        disablePointerDismissal={isDeletingThisModel}
-                      >
-                        <DialogTrigger
-                          disabled={!canDeleteModel}
-                          render={
-                            <Button
-                              variant="destructive"
-                              disabled={!canDeleteModel}
-                            />
-                          }
+                    </CardTitle>
+                    <CardDescription>{model.description}</CardDescription>
+                    <CardAction className="flex flex-wrap justify-end gap-2">
+                      {!model.installed && !isActiveDownload ? (
+                        <Button
+                          size="sm"
+                          disabled={isDownloading || isDeletingModel}
+                          onClick={() => onDownload(model.id)}
                         >
-                          <Trash2Icon data-icon="inline-start" />
-                          刪除
-                        </DialogTrigger>
-                        <DialogContent showCloseButton={!isDeletingThisModel}>
-                          <DialogHeader>
-                            <DialogTitle>刪除 {model.title}</DialogTitle>
-                            <DialogDescription>
-                              這會移除已下載的模型檔案；之後需重新下載才能使用此模型。
-                            </DialogDescription>
-                          </DialogHeader>
-                          <DialogFooter>
-                            <DialogClose
-                              render={<Button variant="outline" />}
-                              disabled={isDeletingThisModel}
-                            >
-                              取消
-                            </DialogClose>
-                            <Button
-                              variant="destructive"
-                              disabled={isDeletingThisModel}
-                              onClick={async () => {
-                                const deleted = await onDeleteModel(model.id);
-                                if (deleted) {
-                                  setDeleteDialogModelId(null);
-                                }
-                              }}
-                            >
-                              {isDeletingThisModel ? (
-                                <Spinner data-icon="inline-start" />
-                              ) : (
-                                <Trash2Icon data-icon="inline-start" />
-                              )}
-                              刪除模型
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    ) : null}
-                  </div>
-                </div>
+                          <DownloadIcon data-icon="inline-start" />
+                          下載模型
+                        </Button>
+                      ) : null}
+
+                      {isActiveDownload ? (
+                        <Badge variant="secondary">
+                          <Spinner />
+                          下載中
+                        </Badge>
+                      ) : null}
+
+                      {model.installed ? (
+                        <Dialog
+                          open={isDeleteDialogOpen}
+                          onOpenChange={(open) =>
+                            setDeleteDialogModelId(open ? model.id : null)
+                          }
+                          disablePointerDismissal={isDeletingThisModel}
+                        >
+                          <DialogTrigger
+                            disabled={!canDeleteModel}
+                            render={
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                disabled={!canDeleteModel}
+                              />
+                            }
+                          >
+                            <Trash2Icon data-icon="inline-start" />
+                            刪除
+                          </DialogTrigger>
+                          <DialogContent
+                            showCloseButton={!isDeletingThisModel}
+                          >
+                            <DialogHeader>
+                              <DialogTitle>刪除 {model.title}</DialogTitle>
+                              <DialogDescription>
+                                這會移除已下載的模型檔案；之後需重新下載才能使用此模型。
+                              </DialogDescription>
+                            </DialogHeader>
+                            <DialogFooter>
+                              <DialogClose
+                                render={<Button variant="outline" />}
+                                disabled={isDeletingThisModel}
+                              >
+                                取消
+                              </DialogClose>
+                              <Button
+                                variant="destructive"
+                                disabled={isDeletingThisModel}
+                                onClick={async () => {
+                                  const deleted = await onDeleteModel(model.id);
+                                  if (deleted) {
+                                    setDeleteDialogModelId(null);
+                                  }
+                                }}
+                              >
+                                {isDeletingThisModel ? (
+                                  <Spinner data-icon="inline-start" />
+                                ) : (
+                                  <Trash2Icon data-icon="inline-start" />
+                                )}
+                                刪除模型
+                              </Button>
+                            </DialogFooter>
+                          </DialogContent>
+                        </Dialog>
+                      ) : null}
+                    </CardAction>
+                  </CardHeader>
+
+                  <CardContent className="flex flex-wrap gap-2">
+                    <Badge variant="outline">{model.sizeHint}</Badge>
+                    <Badge
+                      variant={
+                        model.installed || isActiveDownload
+                          ? "secondary"
+                          : "outline"
+                      }
+                    >
+                      {model.installed
+                        ? "已安裝"
+                        : isActiveDownload
+                          ? `${activeDownloadProgress.percent.toFixed(0)}%`
+                          : "未下載"}
+                    </Badge>
+                  </CardContent>
+
+                  {isActiveDownload ? (
+                    <CardFooter className="model-download-footer">
+                      <Progress
+                        aria-label={`${model.title} 下載進度`}
+                        className="model-download-progress"
+                        value={activeDownloadProgress.percent}
+                      >
+                        <ProgressLabel className="min-w-0 flex-1 truncate">
+                          正在下載模型檔案
+                        </ProgressLabel>
+                        <ProgressValue className="shrink-0 text-foreground">
+                          {() =>
+                            `${activeDownloadProgress.percent.toFixed(0)}%`
+                          }
+                        </ProgressValue>
+                      </Progress>
+                      <div className="model-download-meta">
+                        <span className="truncate">
+                          {activeDownloadProgress.currentFile ?? "準備下載"}
+                        </span>
+                        <span>
+                          {activeDownloadProgress.fileIndex}/
+                          {activeDownloadProgress.totalFiles} 個檔案
+                        </span>
+                        <span>
+                          {formatBytes(
+                            activeDownloadProgress.fileBytesCompleted,
+                          )} /{" "}
+                          {formatBytes(activeDownloadProgress.fileTotalBytes)}
+                        </span>
+                        <span>
+                          {formatBytes(
+                            downloadMovingAverageSpeedBytesPerSec,
+                          )}
+                          /s
+                        </span>
+                      </div>
+                    </CardFooter>
+                  ) : null}
+                </Card>
               );
             })}
           </div>
         )}
-
-        {downloadProgress && isDownloading ? (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="truncate">{downloadProgress.message}</span>
-              <span className="tabular-nums text-muted-foreground">
-                {formatBytes(downloadMovingAverageSpeedBytesPerSec)}/s
-              </span>
-            </div>
-            <Progress value={downloadProgress.percent}>
-              <span className="ml-auto text-sm tabular-nums text-muted-foreground">
-                {downloadProgress.percent.toFixed(0)}%
-              </span>
-            </Progress>
-            <div className="truncate text-xs text-muted-foreground">
-              {downloadProgress.currentFile ?? "模型"} ·{" "}
-              {downloadProgress.fileIndex}/{downloadProgress.totalFiles} ·{" "}
-              {formatBytes(downloadProgress.fileBytesCompleted)} /{" "}
-              {formatBytes(downloadProgress.fileTotalBytes)}
-            </div>
-          </div>
-        ) : null}
       </div>
     </section>
   );
