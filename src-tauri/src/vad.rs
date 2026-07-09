@@ -39,7 +39,7 @@ const MERGE_SILENCE_FRAMES: usize = 0;
 const EXTEND_SPEECH_FRAMES: usize = 0;
 
 const BOUNDARY_PAD_MS: u64 = 240;
-const MERGE_GAP_MS: u64 = 1_200;
+const SPLIT_AFTER_SILENCE_MS: u64 = 5_000;
 const MAX_CHUNK_MS: u64 = 30_000;
 const MIN_CHUNK_MS: u64 = 500;
 
@@ -852,7 +852,10 @@ fn merge_overlapping_ranges(mut ranges: Vec<AudioRange>) -> Vec<AudioRange> {
 
 fn pack_chunks(segments: &[AudioRange], total_samples: usize) -> Vec<AudioRange> {
     let max_chunk_samples = ms_to_samples(MAX_CHUNK_MS);
-    let max_gap_samples = ms_to_samples(MERGE_GAP_MS);
+    // Each detected speech range already includes boundary padding. Subtract both
+    // pads so five seconds represents silence in the source audio.
+    let max_gap_ms = SPLIT_AFTER_SILENCE_MS.saturating_sub(BOUNDARY_PAD_MS.saturating_mul(2));
+    let max_gap_samples = ms_to_samples(max_gap_ms);
     let mut chunks = Vec::new();
     let mut current: Option<AudioRange> = None;
 
@@ -967,6 +970,32 @@ mod tests {
         assert!(chunks[0].start_ms() < 1_000);
         assert!(chunks[0].end_ms() > 2_000);
         assert!(skipped_silence_ms > 1_000);
+    }
+
+    #[test]
+    fn chunk_packing_splits_only_after_five_seconds_of_source_silence() {
+        let total_samples = ms_to_samples(10_000);
+        let first = pad_range(
+            AudioRange::new(ms_to_samples(1_000), ms_to_samples(2_000)),
+            total_samples,
+        );
+        let at_five_seconds = pad_range(
+            AudioRange::new(ms_to_samples(7_000), ms_to_samples(8_000)),
+            total_samples,
+        );
+        let over_five_seconds = pad_range(
+            AudioRange::new(ms_to_samples(7_010), ms_to_samples(8_010)),
+            total_samples,
+        );
+
+        assert_eq!(
+            pack_chunks(&[first, at_five_seconds], total_samples).len(),
+            1
+        );
+        assert_eq!(
+            pack_chunks(&[first, over_five_seconds], total_samples).len(),
+            2
+        );
     }
 
     #[test]
