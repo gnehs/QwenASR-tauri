@@ -5,6 +5,7 @@ export type ModelStatus = {
   description: string;
   sizeHint: string;
   recommended: boolean;
+  role: "transcription" | "forcedAlignment";
   installed: boolean;
   path: string;
   files: string[];

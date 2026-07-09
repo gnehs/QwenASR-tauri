@@ -35,6 +35,7 @@ pub fn model_status(model_id: &str) -> AppResult<ModelStatus> {
         description: model.description.to_string(),
         size_hint: model.size_hint.to_string(),
         recommended: model.recommended,
+        role: model.role,
         installed: missing_files.is_empty(),
         path: path.to_string_lossy().to_string(),
         files: model.files.iter().map(|file| (*file).to_string()).collect(),

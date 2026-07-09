@@ -85,7 +85,7 @@ function App() {
                 {activeView === "tasks" ? (
                   <TaskManagerPanel
                     tasks={workspace.tasks}
-                    models={workspace.models}
+                    models={workspace.transcriptionModels}
                     taskDraft={workspace.taskDraft}
                     draftModel={workspace.draftModel}
                     canConfirmTasks={workspace.canConfirmTasks}

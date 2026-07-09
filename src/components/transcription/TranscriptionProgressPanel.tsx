@@ -11,6 +11,7 @@ const phaseLabels: Record<string, string> = {
   analyzingAudio: "分析音訊",
   transcribing: "模型推論",
   transcribingSegments: "逐段轉錄",
+  aligningTimestamps: "精準時間對齊",
   writingSrt: "輸出字幕",
   finalizing: "整理結果",
   complete: "完成",

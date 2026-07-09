@@ -188,8 +188,7 @@ export function TaskManagerPanel({
   const selectedLanguage =
     languageItems.find((item) => item.value === taskDraft.options.language) ??
     languageItems[0];
-  const taskModelDownloadProgress =
-    downloadProgress?.modelId === taskDraft.modelId ? downloadProgress : null;
+  const taskModelDownloadProgress = downloadProgress;
   const taskModelDownloadPercent = Math.max(
     0,
     Math.min(100, taskModelDownloadProgress?.percent ?? 0),
@@ -460,7 +459,9 @@ export function TaskManagerPanel({
                     <FieldTitle id="task-write-srt-label">
                       輸出 SRT 字幕
                     </FieldTitle>
-                    <FieldDescription>完成後一併產生字幕檔。</FieldDescription>
+                    <FieldDescription>
+                      11 種語言支援精準時間對齊；首次下載約 1.8 GB，其餘語言使用估算時間。
+                    </FieldDescription>
                   </FieldContent>
                   <Switch
                     aria-labelledby="task-write-srt-label"

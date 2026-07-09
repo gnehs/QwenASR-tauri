@@ -33,6 +33,7 @@ import type { DownloadProgress, ModelStatus } from "@/types/transcription";
 const modelTraitBadges: Record<string, string[]> = {
   "qwen3-asr-0.6b": ["速度快", "品質普通"],
   "qwen3-asr-1.7b": ["品質高", "速度較慢"],
+  "qwen3-forced-aligner-0.6b": ["精準時間戳"],
 };
 
 export function ModelPanel({

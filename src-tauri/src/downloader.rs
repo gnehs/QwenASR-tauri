@@ -311,7 +311,8 @@ fn generate_tokenizer_json(model: KnownModel, dir: &std::path::Path) -> AppResul
         .build()
         .map_err(|error| AppError::Download(format!("Failed to build BPE tokenizer: {error}")))?;
     let mut tokenizer = Tokenizer::new(bpe);
-    tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
+    // Qwen3-ASR tokenizer_config.json specifies add_prefix_space=false.
+    tokenizer.with_pre_tokenizer(Some(ByteLevel::new(false, true, true)));
     tokenizer.with_decoder(Some(ByteLevelDecoder::default()));
 
     tokenizer

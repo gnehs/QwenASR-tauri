@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -24,6 +24,20 @@ import type {
 } from "@/types/transcription";
 
 const selectedModelStorageKey = "qwenasr:selected-model-id";
+const forcedAlignerModelId = "qwen3-forced-aligner-0.6b";
+const forcedAlignmentLanguages = new Set([
+  "chinese",
+  "english",
+  "cantonese",
+  "french",
+  "german",
+  "italian",
+  "japanese",
+  "korean",
+  "portuguese",
+  "russian",
+  "spanish",
+]);
 const supportedExtensions = new Set(
   audioFilters.flatMap((filter) =>
     filter.extensions.map((extension) => extension.toLowerCase()),
@@ -83,6 +97,16 @@ function buildOptionsPayload(task: TranscriptionTask) {
     writeSrt: task.options.writeSrt,
     outputDir: task.outputDir || null,
   };
+}
+
+function shouldUseForcedAligner(options: OptionsState) {
+  if (!options.writeSrt) return false;
+
+  const language = options.language.trim().toLowerCase();
+  if (!language || language === "auto") return true;
+  if (language === "chinese (simplified)") return true;
+  if (language.startsWith("cantonese (")) return true;
+  return forcedAlignmentLanguages.has(language);
 }
 
 function movingAverageDownloadSpeed(
@@ -221,8 +245,16 @@ export function useTranscriptionWorkspace() {
   const downloadSpeedMovingAverageRef =
     useRef<DownloadSpeedMovingAverageTracker | null>(null);
 
-  const selectedModel = models.find((model) => model.id === selectedModelId);
-  const draftModel = models.find((model) => model.id === taskDraft.modelId);
+  const transcriptionModels = useMemo(
+    () => models.filter((model) => model.role === "transcription"),
+    [models],
+  );
+  const selectedModel = transcriptionModels.find(
+    (model) => model.id === selectedModelId,
+  );
+  const draftModel = transcriptionModels.find(
+    (model) => model.id === taskDraft.modelId,
+  );
   const hasReadyModel = Boolean(selectedModel?.installed);
   const runningTask = tasks.find((task) => task.status === "running") ?? null;
   const isTranscribing = Boolean(runningTask);
@@ -233,18 +265,19 @@ export function useTranscriptionWorkspace() {
     (Boolean(draftModel?.installed) || !isDownloading);
 
   const defaultModelId = useCallback(() => {
-    const installedSelected = models.find(
+    const installedSelected = transcriptionModels.find(
       (model) => model.id === selectedModelId && model.installed,
     );
     if (installedSelected) return installedSelected.id;
 
     return (
-      models.find((model) => model.recommended && model.installed)?.id ??
-      models.find((model) => model.installed)?.id ??
+      transcriptionModels.find((model) => model.recommended && model.installed)
+        ?.id ??
+      transcriptionModels.find((model) => model.installed)?.id ??
       selectedModelId ??
       ""
     );
-  }, [models, selectedModelId]);
+  }, [transcriptionModels, selectedModelId]);
 
   const openTaskDialog = useCallback(
     (paths: string[]) => {
@@ -413,30 +446,31 @@ export function useTranscriptionWorkspace() {
   }, [openTaskDialog]);
 
   useEffect(() => {
-    if (models.length === 0) return;
+    if (transcriptionModels.length === 0) return;
 
-    const hasSelectedModel = models.some(
+    const hasSelectedModel = transcriptionModels.some(
       (model) => model.id === selectedModelId,
     );
 
     if (!hasSelectedModel) {
       setSelectedModelId(
-        models.find((model) => model.recommended)?.id ?? models[0].id,
+        transcriptionModels.find((model) => model.recommended)?.id ??
+          transcriptionModels[0].id,
       );
     }
-  }, [models, selectedModelId]);
+  }, [selectedModelId, transcriptionModels]);
 
   useEffect(() => {
-    if (models.length === 0 || !selectedModelId) return;
+    if (transcriptionModels.length === 0 || !selectedModelId) return;
 
-    const hasSelectedModel = models.some(
+    const hasSelectedModel = transcriptionModels.some(
       (model) => model.id === selectedModelId,
     );
 
     if (hasSelectedModel) {
       writeStoredSelectedModelId(selectedModelId);
     }
-  }, [models, selectedModelId]);
+  }, [selectedModelId, transcriptionModels]);
 
   useEffect(() => {
     if (!isTaskDialogOpen || taskDraft.modelId) return;
@@ -536,7 +570,9 @@ export function useTranscriptionWorkspace() {
   async function deleteModel(modelId: string) {
     const modelInQueue = tasks.some(
       (task) =>
-        task.modelId === modelId &&
+        (task.modelId === modelId ||
+          (modelId === forcedAlignerModelId &&
+            shouldUseForcedAligner(task.options))) &&
         (task.status === "queued" || task.status === "running"),
     );
 
@@ -576,7 +612,13 @@ export function useTranscriptionWorkspace() {
   async function confirmTaskDraft() {
     if (!canConfirmTasks || !draftModel) return;
 
-    const needsDownload = !draftModel.installed;
+    const forcedAligner = models.find(
+      (model) => model.id === forcedAlignerModelId,
+    );
+    const needsForcedAligner = shouldUseForcedAligner(taskDraft.options);
+    const needsDownload =
+      !draftModel.installed ||
+      (needsForcedAligner && !forcedAligner?.installed);
     setIsConfirmingTasks(true);
     setTaskModelDownloadError(null);
     if (needsDownload) {
@@ -587,7 +629,15 @@ export function useTranscriptionWorkspace() {
       let readyModel = draftModel;
 
       if (needsDownload) {
-        readyModel = await downloadModel(draftModel.id);
+        if (!readyModel.installed) {
+          readyModel = await downloadModel(draftModel.id);
+        }
+        if (needsForcedAligner && !forcedAligner?.installed) {
+          if (!forcedAligner) {
+            throw new Error("找不到 Qwen3 ForcedAligner 模型設定");
+          }
+          await downloadModel(forcedAligner.id);
+        }
       }
 
       const createdAt = Date.now();
@@ -666,6 +716,7 @@ export function useTranscriptionWorkspace() {
 
   return {
     models,
+    transcriptionModels,
     ffmpeg,
     selectedModel,
     selectedModelId,

@@ -1,5 +1,14 @@
 use serde::{Deserialize, Serialize};
 
+pub const FORCED_ALIGNER_MODEL_ID: &str = "qwen3-forced-aligner-0.6b";
+
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ModelRole {
+    Transcription,
+    ForcedAlignment,
+}
+
 #[derive(Clone, Copy)]
 pub struct KnownModel {
     pub id: &'static str,
@@ -9,6 +18,7 @@ pub struct KnownModel {
     pub description: &'static str,
     pub size_hint: &'static str,
     pub recommended: bool,
+    pub role: ModelRole,
 }
 
 pub const KNOWN_MODELS: &[KnownModel] = &[
@@ -26,6 +36,7 @@ pub const KNOWN_MODELS: &[KnownModel] = &[
         description: "快速、適合大多數單次與批次轉錄工作。",
         size_hint: "~1.2 GB",
         recommended: true,
+        role: ModelRole::Transcription,
     },
     KnownModel {
         id: "qwen3-asr-1.7b",
@@ -43,6 +54,23 @@ pub const KNOWN_MODELS: &[KnownModel] = &[
         description: "較高準確度，適合重要錄音或較複雜的聲學環境。",
         size_hint: "~3.5 GB",
         recommended: false,
+        role: ModelRole::Transcription,
+    },
+    KnownModel {
+        id: FORCED_ALIGNER_MODEL_ID,
+        title: "Qwen3 ForcedAligner 0.6B",
+        repo: "Qwen/Qwen3-ForcedAligner-0.6B",
+        files: &[
+            "config.json",
+            "model.safetensors",
+            "vocab.json",
+            "merges.txt",
+            "tokenizer.json",
+        ],
+        description: "對齊音訊與逐字稿，產生精準的字詞級字幕時間戳。",
+        size_hint: "~1.8 GB",
+        recommended: false,
+        role: ModelRole::ForcedAlignment,
     },
 ];
 
@@ -63,6 +91,7 @@ pub struct ModelStatus {
     pub description: String,
     pub size_hint: String,
     pub recommended: bool,
+    pub role: ModelRole,
     pub installed: bool,
     pub path: String,
     pub files: Vec<String>,

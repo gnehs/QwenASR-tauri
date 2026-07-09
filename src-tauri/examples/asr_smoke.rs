@@ -215,7 +215,7 @@ fn ensure_tokenizer_json(model_dir: &Path) -> Result<()> {
     let merges = merges_path.to_string_lossy();
     let bpe = BPE::from_file(vocab.as_ref(), merges.as_ref()).build()?;
     let mut tokenizer = Tokenizer::new(bpe);
-    tokenizer.with_pre_tokenizer(Some(ByteLevel::default()));
+    tokenizer.with_pre_tokenizer(Some(ByteLevel::new(false, true, true)));
     tokenizer.with_decoder(Some(ByteLevelDecoder::default()));
 
     tokenizer.save(tokenizer_path, false)?;

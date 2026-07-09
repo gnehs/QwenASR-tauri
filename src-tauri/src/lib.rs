@@ -1,6 +1,7 @@
 mod audio;
 mod downloader;
 mod error;
+mod forced_alignment;
 mod models;
 mod paths;
 mod srt;

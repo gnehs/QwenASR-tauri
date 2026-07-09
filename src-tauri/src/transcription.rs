@@ -12,9 +12,10 @@ use tauri::{AppHandle, Emitter};
 
 use crate::audio;
 use crate::error::{AppError, AppResult};
+use crate::forced_alignment::{tokenize_alignment_units, AlignedUnit, ForcedAlignerInference};
 use crate::models::{
     TranscribeBatchRequest, TranscribeFileRequest, TranscribeOptions, TranscriptSegment,
-    TranscriptionProgress, TranscriptionResult,
+    TranscriptionProgress, TranscriptionResult, FORCED_ALIGNER_MODEL_ID,
 };
 use crate::paths::{model_dir, model_status};
 use crate::srt;
@@ -141,12 +142,20 @@ fn transcribe_file_inner(
     );
 
     let model_path = ensure_model(&request.options.model_id)?;
+    let use_forced_aligner = should_use_forced_aligner(&request.options);
+    let aligner_path = use_forced_aligner
+        .then(|| ensure_model(FORCED_ALIGNER_MODEL_ID))
+        .transpose()?;
     emit_progress(
         app,
         started,
         "running",
         "loadingModel",
-        "載入 QwenASR 模型",
+        if use_forced_aligner {
+            "載入 QwenASR 與 ForcedAligner 模型"
+        } else {
+            "載入 QwenASR 模型"
+        },
         Some(&request.audio_path),
         Some(&request.audio_path),
         1,
@@ -155,11 +164,17 @@ fn transcribe_file_inner(
         None,
     );
 
-    let engine = load_engine(&model_path)?;
+    let device = default_device();
+    let engine = load_engine(&model_path, device)?;
+    let aligner = aligner_path
+        .as_deref()
+        .map(|path| load_forced_aligner(path, device))
+        .transpose()?;
     let mut result = transcribe_with_context(
         app,
         started,
         &engine,
+        aligner.as_ref(),
         &request.audio_path,
         &request.options,
         1,
@@ -223,12 +238,20 @@ pub fn transcribe_batch(
     );
 
     let model_path = ensure_model(&request.options.model_id)?;
+    let use_forced_aligner = should_use_forced_aligner(&request.options);
+    let aligner_path = use_forced_aligner
+        .then(|| ensure_model(FORCED_ALIGNER_MODEL_ID))
+        .transpose()?;
     emit_progress(
         &app,
         started,
         "running",
         "loadingModel",
-        "載入 QwenASR 模型",
+        if use_forced_aligner {
+            "載入 QwenASR 與 ForcedAligner 模型"
+        } else {
+            "載入 QwenASR 模型"
+        },
         None,
         None,
         0,
@@ -237,7 +260,12 @@ pub fn transcribe_batch(
         None,
     );
 
-    let engine = load_engine(&model_path)?;
+    let device = default_device();
+    let engine = load_engine(&model_path, device)?;
+    let aligner = aligner_path
+        .as_deref()
+        .map(|path| load_forced_aligner(path, device))
+        .transpose()?;
     let total = request.audio_paths.len();
     let mut results = Vec::with_capacity(total);
 
@@ -258,6 +286,7 @@ pub fn transcribe_batch(
             &app,
             started,
             &engine,
+            aligner.as_ref(),
             audio_path,
             &request.options,
             file_index,
@@ -485,13 +514,17 @@ fn ensure_model(model_id: &str) -> AppResult<PathBuf> {
     model_dir(model_id)
 }
 
-fn load_engine(model_path: &Path) -> AppResult<AsrInference> {
-    AsrInference::load(model_path, default_device()).map_err(|error| {
+fn load_engine(model_path: &Path, device: Device) -> AppResult<AsrInference> {
+    AsrInference::load(model_path, device).map_err(|error| {
         AppError::Model(format!(
             "Failed to load model from {}: {error}",
             model_path.display()
         ))
     })
+}
+
+fn load_forced_aligner(model_path: &Path, device: Device) -> AppResult<ForcedAlignerInference> {
+    ForcedAlignerInference::load(model_path, device)
 }
 
 fn default_device() -> Device {
@@ -516,6 +549,7 @@ fn transcribe_with_context(
     app: &AppHandle,
     progress_started: Instant,
     engine: &AsrInference,
+    aligner: Option<&ForcedAlignerInference>,
     audio_path: &str,
     options: &TranscribeOptions,
     file_index: usize,
@@ -667,14 +701,60 @@ fn transcribe_with_context(
                 ))
             })?;
 
-        let chunk_text = normalize_asr_text(&raw_result, language_forced);
-        let chunk_text = convert_text_for_output_language(chunk_text, output_language.as_deref())?;
-        if !chunk_text.trim().is_empty() {
-            segments.extend(build_approximate_segments_with_offset(
-                &chunk_text,
-                chunk.duration_ms(),
-                chunk.start_ms(),
-            ));
+        let raw_chunk_text = normalize_asr_text(&raw_result, language_forced);
+        let chunk_text =
+            convert_text_for_output_language(raw_chunk_text.clone(), output_language.as_deref())?;
+        if !raw_chunk_text.trim().is_empty() {
+            let detected_language = parse_auto_asr_language(&raw_result.raw_output)
+                .unwrap_or(raw_result.language.as_str());
+            let alignment_language = alignment_language(asr_language.as_deref(), detected_language);
+            let aligned_segments = if let (Some(aligner), Some(language)) =
+                (aligner, alignment_language)
+            {
+                emit_chunk_progress(
+                    app,
+                    progress_started,
+                    audio_path,
+                    file_index,
+                    total_files,
+                    chunk_index,
+                    total_chunks,
+                    *chunk,
+                    processed_audio_ms,
+                    total_chunk_audio_ms,
+                    skipped_silence_ms,
+                    before_percent,
+                    before_eta_ms,
+                    "aligningTimestamps",
+                    &format!("對齊第 {chunk_index} / {total_chunks} 個片段的時間戳"),
+                    build_partial_transcript(&transcript_parts),
+                );
+                let aligned_units = aligner
+                    .align(chunk_audio_path, &raw_chunk_text, language)
+                    .map_err(|error| {
+                        AppError::Transcription(format!(
+                            "Qwen3 ForcedAligner failed on chunk {chunk_index}/{total_chunks}: {error}"
+                        ))
+                    })?;
+                build_aligned_segments_with_offset(
+                    &raw_chunk_text,
+                    &aligned_units,
+                    language,
+                    output_language.as_deref(),
+                    chunk.start_ms(),
+                    chunk.duration_ms(),
+                )?
+            } else {
+                None
+            };
+
+            segments.extend(aligned_segments.unwrap_or_else(|| {
+                build_approximate_segments_with_offset(
+                    &chunk_text,
+                    chunk.duration_ms(),
+                    chunk.start_ms(),
+                )
+            }));
             transcript_parts.push(chunk_text);
         }
 
@@ -833,6 +913,19 @@ fn normalize_asr_language(output_language: Option<&str>) -> Option<String> {
         })
 }
 
+fn should_use_forced_aligner(options: &TranscribeOptions) -> bool {
+    if !options.write_srt {
+        return false;
+    }
+
+    let output_language = normalize_output_language(options.language.as_deref());
+    let asr_language = normalize_asr_language(output_language.as_deref());
+    match asr_language.as_deref() {
+        None => true,
+        Some(language) => alignment_language(Some(language), "").is_some(),
+    }
+}
+
 fn normalize_asr_text(result: &QwenTranscribeResult, language_forced: bool) -> String {
     let text = if language_forced {
         result.text.trim()
@@ -907,6 +1000,14 @@ fn parse_auto_asr_text(raw: &str) -> Option<&str> {
         }
     }
     None
+}
+
+fn parse_auto_asr_language(raw: &str) -> Option<&'static str> {
+    let rest = raw.trim().strip_prefix("language ")?;
+    ASR_LANGUAGES
+        .iter()
+        .copied()
+        .find(|language| rest.starts_with(language))
 }
 
 fn collapse_spaced_acronyms(text: &str) -> String {
@@ -994,6 +1095,100 @@ fn build_approximate_segments_with_offset(
     }
 
     segments
+}
+
+fn alignment_language(forced: Option<&str>, detected: &str) -> Option<&'static str> {
+    let language = forced.unwrap_or(detected).trim();
+    if language.eq_ignore_ascii_case("Chinese") {
+        Some("Chinese")
+    } else if language.eq_ignore_ascii_case("English") {
+        Some("English")
+    } else if language.eq_ignore_ascii_case("Cantonese")
+        || language.to_ascii_lowercase().starts_with("cantonese (")
+    {
+        Some("Cantonese")
+    } else if language.eq_ignore_ascii_case("French") {
+        Some("French")
+    } else if language.eq_ignore_ascii_case("German") {
+        Some("German")
+    } else if language.eq_ignore_ascii_case("Italian") {
+        Some("Italian")
+    } else if language.eq_ignore_ascii_case("Japanese") {
+        Some("Japanese")
+    } else if language.eq_ignore_ascii_case("Korean") {
+        Some("Korean")
+    } else if language.eq_ignore_ascii_case("Portuguese") {
+        Some("Portuguese")
+    } else if language.eq_ignore_ascii_case("Russian") {
+        Some("Russian")
+    } else if language.eq_ignore_ascii_case("Spanish") {
+        Some("Spanish")
+    } else {
+        None
+    }
+}
+
+fn build_aligned_segments_with_offset(
+    text: &str,
+    aligned_units: &[AlignedUnit],
+    language: &str,
+    output_language: Option<&str>,
+    offset_ms: u64,
+    audio_ms: u64,
+) -> AppResult<Option<Vec<TranscriptSegment>>> {
+    let text_units = tokenize_alignment_units(text, language);
+    if text_units.is_empty() || aligned_units.len() != text_units.len() {
+        return Ok(None);
+    }
+
+    let phrase_texts = split_transcript_units(text);
+    if phrase_texts.is_empty() {
+        return Ok(None);
+    }
+
+    let mut aligned_cursor = 0usize;
+    let mut segments = Vec::with_capacity(phrase_texts.len());
+    for phrase in phrase_texts {
+        let phrase_unit_count = tokenize_alignment_units(&phrase, language).len();
+        if phrase_unit_count == 0 {
+            continue;
+        }
+        let aligned_end = aligned_cursor.saturating_add(phrase_unit_count);
+        if aligned_end > aligned_units.len() {
+            return Ok(None);
+        }
+
+        let first = &aligned_units[aligned_cursor];
+        let last = &aligned_units[aligned_end - 1];
+        let local_start = first.start_ms.min(audio_ms.saturating_sub(1));
+        let local_end = last
+            .end_ms
+            .max(local_start.saturating_add(1))
+            .min(audio_ms.max(1));
+        let phrase = convert_text_for_output_language(phrase, output_language)?;
+        segments.push(TranscriptSegment {
+            start_ms: offset_ms.saturating_add(local_start),
+            end_ms: offset_ms.saturating_add(local_end),
+            text: phrase,
+        });
+        aligned_cursor = aligned_end;
+    }
+
+    if aligned_cursor != aligned_units.len() || segments.is_empty() {
+        return Ok(None);
+    }
+
+    for index in 1..segments.len() {
+        let previous_end = segments[index - 1].end_ms;
+        if segments[index].start_ms < previous_end {
+            segments[index].start_ms = previous_end;
+        }
+        if segments[index].end_ms <= segments[index].start_ms {
+            segments[index].end_ms = segments[index].start_ms.saturating_add(1);
+        }
+    }
+
+    Ok(Some(segments))
 }
 
 fn format_duration_short(ms: u64) -> String {
@@ -1330,6 +1525,102 @@ mod tests {
         assert!(segments
             .iter()
             .all(|segment| segment.end_ms > segment.start_ms));
+    }
+
+    #[test]
+    fn groups_forced_alignment_units_into_readable_subtitle_cues() {
+        let aligned = vec![
+            AlignedUnit {
+                text: "第".into(),
+                start_ms: 80,
+                end_ms: 160,
+            },
+            AlignedUnit {
+                text: "一".into(),
+                start_ms: 160,
+                end_ms: 240,
+            },
+            AlignedUnit {
+                text: "句".into(),
+                start_ms: 240,
+                end_ms: 400,
+            },
+            AlignedUnit {
+                text: "第".into(),
+                start_ms: 560,
+                end_ms: 640,
+            },
+            AlignedUnit {
+                text: "二".into(),
+                start_ms: 640,
+                end_ms: 720,
+            },
+            AlignedUnit {
+                text: "句".into(),
+                start_ms: 720,
+                end_ms: 880,
+            },
+        ];
+
+        let segments = build_aligned_segments_with_offset(
+            "第一句。第二句。",
+            &aligned,
+            "Chinese",
+            Some("Chinese"),
+            1_000,
+            1_000,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].text, "第一句。");
+        assert_eq!(segments[0].start_ms, 1_080);
+        assert_eq!(segments[0].end_ms, 1_400);
+        assert_eq!(segments[1].text, "第二句。");
+        assert_eq!(segments[1].start_ms, 1_560);
+        assert_eq!(segments[1].end_ms, 1_880);
+    }
+
+    #[test]
+    fn maps_only_officially_supported_forced_alignment_languages() {
+        assert_eq!(
+            alignment_language(Some("Chinese"), "forced"),
+            Some("Chinese")
+        );
+        assert_eq!(
+            alignment_language(Some("Cantonese (Hong Kong accent)"), "forced"),
+            Some("Cantonese")
+        );
+        assert_eq!(alignment_language(None, "English"), Some("English"));
+        assert_eq!(alignment_language(Some("Arabic"), "forced"), None);
+    }
+
+    #[test]
+    fn resolves_auto_detected_language_before_transcript_prefix() {
+        assert_eq!(
+            parse_auto_asr_language("language ChineseAI幫你股票賺錢"),
+            Some("Chinese")
+        );
+        assert_eq!(
+            parse_auto_asr_language("language Cantonese (Hong Kong accent)<asr_text>今日天氣很好"),
+            Some("Cantonese (Hong Kong accent)")
+        );
+    }
+
+    #[test]
+    fn loads_forced_aligner_only_for_supported_srt_languages() {
+        let options = |language: &str, write_srt: bool| TranscribeOptions {
+            model_id: "qwen3-asr-0.6b".into(),
+            language: Some(language.into()),
+            write_srt,
+            output_dir: None,
+        };
+
+        assert!(should_use_forced_aligner(&options("auto", true)));
+        assert!(should_use_forced_aligner(&options("Chinese", true)));
+        assert!(!should_use_forced_aligner(&options("Arabic", true)));
+        assert!(!should_use_forced_aligner(&options("Chinese", false)));
     }
 }
 
