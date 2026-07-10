@@ -100,8 +100,12 @@ function readStoredTranscriptionOptions(): OptionsState {
       typeof stored.writeSrt === "boolean"
         ? stored.writeSrt
         : defaultOptions.writeSrt;
+    const segmentByPunctuation =
+      typeof stored.segmentByPunctuation === "boolean"
+        ? stored.segmentByPunctuation
+        : defaultOptions.segmentByPunctuation;
 
-    return { language, writeSrt };
+    return { language, writeSrt, segmentByPunctuation };
   } catch {
     return { ...defaultOptions };
   }
@@ -138,6 +142,7 @@ function buildOptionsPayload(task: TranscriptionTask) {
     modelId: task.modelId,
     language: task.options.language,
     writeSrt: task.options.writeSrt,
+    segmentByPunctuation: task.options.segmentByPunctuation,
     outputDir: task.outputDir || null,
   };
 }

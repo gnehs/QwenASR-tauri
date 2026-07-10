@@ -126,7 +126,13 @@ pub struct TranscribeOptions {
     pub model_id: String,
     pub language: Option<String>,
     pub write_srt: bool,
+    #[serde(default = "default_true")]
+    pub segment_by_punctuation: bool,
     pub output_dir: Option<String>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -182,4 +188,19 @@ pub struct TranscriptionProgress {
     pub total_speech_ms: Option<u64>,
     pub skipped_silence_ms: Option<u64>,
     pub partial_segments: Option<Vec<TranscriptSegment>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TranscribeOptions;
+
+    #[test]
+    fn defaults_punctuation_segmentation_for_older_requests() {
+        let options: TranscribeOptions = serde_json::from_str(
+            r#"{"modelId":"qwen3-asr-0.6b","language":"auto","writeSrt":true,"outputDir":null}"#,
+        )
+        .unwrap();
+
+        assert!(options.segment_by_punctuation);
+    }
 }

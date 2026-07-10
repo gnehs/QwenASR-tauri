@@ -36,7 +36,6 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldSet,
   FieldTitle,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -386,7 +385,7 @@ export function TaskManagerPanel({
           <DialogHeader>
             <DialogTitle>新增轉錄任務</DialogTitle>
             <DialogDescription>
-              {taskDraft.files.length} 個檔案會使用相同模型、語言與輸出資料夾。
+              {taskDraft.files.length} 個檔案會使用相同模型、語言、斷句方式與輸出資料夾。
             </DialogDescription>
           </DialogHeader>
 
@@ -467,32 +466,54 @@ export function TaskManagerPanel({
                 </div>
               </Field>
 
-              <FieldSet>
-                <Field orientation="horizontal">
-                  <FieldContent>
-                    <FieldTitle id="task-write-srt-label">
-                      輸出 SRT 字幕
-                    </FieldTitle>
-                    <FieldDescription>
-                      建立可隨音訊同步顯示的字幕檔。中文、英文等支援語言會產生較精準的字幕時間，首次使用時需下載約 1.8 GB
-                      的模型；其他語言則使用估算時間。
-                    </FieldDescription>
-                  </FieldContent>
-                  <Switch
-                    aria-labelledby="task-write-srt-label"
-                    checked={taskDraft.options.writeSrt}
-                    onCheckedChange={(checked) =>
-                      onTaskDraftChange((current) => ({
-                        ...current,
-                        options: {
-                          ...current.options,
-                          writeSrt: checked,
-                        },
-                      }))
-                    }
-                  />
-                </Field>
-              </FieldSet>
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle id="task-write-srt-label">
+                    輸出 SRT 字幕
+                  </FieldTitle>
+                  <FieldDescription>
+                    建立可隨音訊同步顯示的字幕檔。中文、英文等支援語言會產生較精準的字幕時間，首次使用時需下載約 1.8 GB
+                    的模型；其他語言則使用估算時間。
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  aria-labelledby="task-write-srt-label"
+                  checked={taskDraft.options.writeSrt}
+                  onCheckedChange={(checked) =>
+                    onTaskDraftChange((current) => ({
+                      ...current,
+                      options: {
+                        ...current.options,
+                        writeSrt: checked,
+                      },
+                    }))
+                  }
+                />
+              </Field>
+
+              <Field orientation="horizontal">
+                <FieldContent>
+                  <FieldTitle id="task-segment-by-punctuation-label">
+                    依標點符號斷句
+                  </FieldTitle>
+                  <FieldDescription>
+                    開啟後會依句號、逗號等標點建立片段；關閉後保留系統偵測出的自然音訊片段。
+                  </FieldDescription>
+                </FieldContent>
+                <Switch
+                  aria-labelledby="task-segment-by-punctuation-label"
+                  checked={taskDraft.options.segmentByPunctuation}
+                  onCheckedChange={(checked) =>
+                    onTaskDraftChange((current) => ({
+                      ...current,
+                      options: {
+                        ...current.options,
+                        segmentByPunctuation: checked,
+                      },
+                    }))
+                  }
+                />
+              </Field>
             </FieldGroup>
 
             <Separator />

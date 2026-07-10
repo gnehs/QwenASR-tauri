@@ -874,6 +874,7 @@ fn transcribe_with_context(
                 &chunk_text,
                 chunk.duration_ms(),
                 chunk.start_ms(),
+                options.segment_by_punctuation,
             ));
             pending_chunks.push(PendingChunk {
                 chunk_index,
@@ -1000,6 +1001,7 @@ fn finalize_transcription_with_context(
                 output_language.as_deref(),
                 chunk.range.start_ms(),
                 chunk.range.duration_ms(),
+                pending.options.segment_by_punctuation,
             )?
         } else {
             None
@@ -1010,6 +1012,7 @@ fn finalize_transcription_with_context(
                 &chunk.output_text,
                 chunk.range.duration_ms(),
                 chunk.range.start_ms(),
+                pending.options.segment_by_punctuation,
             )
         }));
         processed_alignment_ms = processed_alignment_ms.saturating_add(chunk.range.duration_ms());
@@ -1231,13 +1234,14 @@ fn collapse_spaced_acronyms(text: &str) -> String {
 
 #[cfg(test)]
 fn build_approximate_segments(text: &str, audio_ms: u64) -> Vec<TranscriptSegment> {
-    build_approximate_segments_with_offset(text, audio_ms, 0)
+    build_approximate_segments_with_offset(text, audio_ms, 0, true)
 }
 
 fn build_approximate_segments_with_offset(
     text: &str,
     audio_ms: u64,
     offset_ms: u64,
+    segment_by_punctuation: bool,
 ) -> Vec<TranscriptSegment> {
     let text = text.trim();
     if text.is_empty() {
@@ -1245,7 +1249,7 @@ fn build_approximate_segments_with_offset(
     }
 
     let audio_ms = audio_ms.max(1);
-    let mut units = split_transcript_units(text);
+    let mut units = transcript_units(text, segment_by_punctuation);
     if units.is_empty() {
         return Vec::new();
     }
@@ -1323,13 +1327,14 @@ fn build_aligned_segments_with_offset(
     output_language: Option<&str>,
     offset_ms: u64,
     audio_ms: u64,
+    segment_by_punctuation: bool,
 ) -> AppResult<Option<Vec<TranscriptSegment>>> {
     let text_units = tokenize_alignment_units(text, language);
     if text_units.is_empty() || aligned_units.len() != text_units.len() {
         return Ok(None);
     }
 
-    let phrase_texts = split_transcript_units(text);
+    let phrase_texts = transcript_units(text, segment_by_punctuation);
     if phrase_texts.is_empty() {
         return Ok(None);
     }
@@ -1420,6 +1425,18 @@ fn split_transcript_units(text: &str) -> Vec<String> {
 
     push_segment_unit(&mut units, &mut current, &mut current_chars);
     units
+}
+
+fn transcript_units(text: &str, segment_by_punctuation: bool) -> Vec<String> {
+    if segment_by_punctuation {
+        split_transcript_units(text)
+    } else {
+        let text = text.trim();
+        (!text.is_empty())
+            .then(|| text.to_string())
+            .into_iter()
+            .collect()
+    }
 }
 
 fn limit_segment_count(units: Vec<String>, audio_ms: u64) -> Vec<String> {
@@ -1693,6 +1710,13 @@ mod tests {
     }
 
     #[test]
+    fn keeps_punctuation_in_one_unit_when_segmentation_is_disabled() {
+        let text = "第一句，第二句。Third sentence!";
+
+        assert_eq!(transcript_units(text, false), vec![text]);
+    }
+
+    #[test]
     fn preserves_complete_words_for_forced_alignment() {
         let text = "No, I completely understand. I've been trying to get this interview for nearly six months now, so I'm gonna make sure I use this one hour to the full. Make sure you only film Mr. Swallow's left side, not his right.";
         let text_units = tokenize_alignment_units(text, "English");
@@ -1713,6 +1737,7 @@ mod tests {
             Some("English"),
             0,
             aligned.len() as u64 * 100,
+            true,
         )
         .unwrap()
         .expect("punctuation-based splitting should preserve alignment units");
@@ -1748,12 +1773,24 @@ mod tests {
     }
 
     #[test]
+    fn approximate_segments_use_one_cue_when_segmentation_is_disabled() {
+        let text = "第一句，第二句。Third sentence!";
+        let segments = build_approximate_segments_with_offset(text, 10_000, 2_000, false);
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].start_ms, 2_000);
+        assert_eq!(segments[0].end_ms, 12_000);
+        assert_eq!(segments[0].text, text);
+    }
+
+    #[test]
     fn approximate_segments_keep_vad_chunk_offsets() {
-        let mut segments = build_approximate_segments_with_offset("第一段。", 1_000, 0);
+        let mut segments = build_approximate_segments_with_offset("第一段。", 1_000, 0, true);
         segments.extend(build_approximate_segments_with_offset(
             "第二段。",
             1_500,
             2_500,
+            true,
         ));
 
         assert_eq!(segments.first().map(|segment| segment.start_ms), Some(0));
@@ -1828,6 +1865,7 @@ mod tests {
             Some("Chinese"),
             1_000,
             1_000,
+            true,
         )
         .unwrap()
         .unwrap();
@@ -1839,6 +1877,37 @@ mod tests {
         assert_eq!(segments[1].text, "第二句。");
         assert_eq!(segments[1].start_ms, 1_560);
         assert_eq!(segments[1].end_ms, 1_880);
+    }
+
+    #[test]
+    fn forced_alignment_uses_one_cue_when_segmentation_is_disabled() {
+        let text = "第一句，第二句。";
+        let aligned = tokenize_alignment_units(text, "Chinese")
+            .into_iter()
+            .enumerate()
+            .map(|(index, unit)| AlignedUnit {
+                text: unit,
+                start_ms: index as u64 * 100,
+                end_ms: index as u64 * 100 + 80,
+            })
+            .collect::<Vec<_>>();
+
+        let segments = build_aligned_segments_with_offset(
+            text,
+            &aligned,
+            "Chinese",
+            Some("Chinese"),
+            1_000,
+            1_000,
+            false,
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segments[0].text, text);
+        assert_eq!(segments[0].start_ms, 1_000);
+        assert_eq!(segments[0].end_ms, 1_580);
     }
 
     #[test]
@@ -1873,6 +1942,7 @@ mod tests {
             model_id: "qwen3-asr-0.6b".into(),
             language: Some(language.into()),
             write_srt,
+            segment_by_punctuation: true,
             output_dir: None,
         };
 

@@ -84,4 +84,5 @@ export const audioFilters = [
 export const defaultOptions: OptionsState = {
   language: "auto",
   writeSrt: true,
+  segmentByPunctuation: true,
 };

@@ -68,6 +68,7 @@ export type TranscriptionProgress = {
 export type OptionsState = {
   language: string;
   writeSrt: boolean;
+  segmentByPunctuation: boolean;
 };
 
 export type TaskStatus = "queued" | "running" | "completed" | "failed";

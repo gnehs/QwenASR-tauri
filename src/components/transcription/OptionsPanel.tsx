@@ -7,7 +7,6 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
-  FieldSet,
   FieldTitle,
 } from "@/components/ui/field";
 import {
@@ -43,6 +42,7 @@ export function OptionsPanel({
   const summaryItems = [
     language?.label ?? "自動偵測",
     options.writeSrt ? "輸出 SRT" : "只輸出文字",
+    options.segmentByPunctuation ? "依標點斷句" : "依音訊片段斷句",
   ].filter(Boolean);
 
   return (
@@ -92,23 +92,39 @@ export function OptionsPanel({
               </Select>
             </Field>
 
-            <FieldSet>
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle id="write-srt-label">輸出 SRT 字幕</FieldTitle>
-                  <FieldDescription>
-                    字幕會依文字切段，並使用近似時間軸輸出。
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  aria-labelledby="write-srt-label"
-                  checked={options.writeSrt}
-                  onCheckedChange={(checked) =>
-                    onChange({ ...options, writeSrt: checked })
-                  }
-                />
-              </Field>
-            </FieldSet>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle id="write-srt-label">輸出 SRT 字幕</FieldTitle>
+                <FieldDescription>
+                  建立可隨音訊同步顯示的字幕檔。
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                aria-labelledby="write-srt-label"
+                checked={options.writeSrt}
+                onCheckedChange={(checked) =>
+                  onChange({ ...options, writeSrt: checked })
+                }
+              />
+            </Field>
+
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldTitle id="segment-by-punctuation-label">
+                  依標點符號斷句
+                </FieldTitle>
+                <FieldDescription>
+                  關閉後會保留系統偵測出的自然音訊片段。
+                </FieldDescription>
+              </FieldContent>
+              <Switch
+                aria-labelledby="segment-by-punctuation-label"
+                checked={options.segmentByPunctuation}
+                onCheckedChange={(checked) =>
+                  onChange({ ...options, segmentByPunctuation: checked })
+                }
+              />
+            </Field>
           </FieldGroup>
         </div>
         <SheetFooter>
