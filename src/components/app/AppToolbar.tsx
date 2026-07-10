@@ -1,7 +1,6 @@
 import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { SidebarTrigger } from "@/components/ui/sidebar";
 import type { FfmpegStatus } from "@/types/transcription";
 
 export function AppToolbar({
@@ -9,25 +8,31 @@ export function AppToolbar({
   title,
   subtitle,
   actions,
+  utilities,
 }: {
   ffmpeg: FfmpegStatus;
   title: string;
-  subtitle: string;
+  subtitle?: string;
   actions?: ReactNode;
+  utilities?: ReactNode;
 }) {
   return (
     <header className="window-toolbar">
-      <SidebarTrigger />
-      <div className="min-w-0">
+      <div className="window-toolbar-copy">
         <h1 className="truncate font-heading text-base font-medium">{title}</h1>
-        <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
-      </div>
-      <div className="window-toolbar-actions">
-        {actions}
-        {!ffmpeg.available ? (
-          <Badge variant="destructive">缺少 FFmpeg</Badge>
+        {subtitle ? (
+          <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
         ) : null}
       </div>
+      {actions || !ffmpeg.available ? (
+        <div className="window-toolbar-actions">
+          <div className="window-toolbar-primary-actions">{actions}</div>
+          {!ffmpeg.available ? (
+            <Badge variant="destructive">缺少 FFmpeg</Badge>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="window-toolbar-utilities">{utilities}</div>
     </header>
   );
 }

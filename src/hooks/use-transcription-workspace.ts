@@ -287,6 +287,7 @@ export function useTranscriptionWorkspace() {
   >(null);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const runningTaskIdRef = useRef<string | null>(null);
+  const openTaskDialogRef = useRef<(paths: string[]) => void>(() => {});
   const downloadSpeedMovingAverageRef =
     useRef<DownloadSpeedMovingAverageTracker | null>(null);
 
@@ -458,19 +459,26 @@ export function useTranscriptionWorkspace() {
   }, []);
 
   useEffect(() => {
+    openTaskDialogRef.current = openTaskDialog;
+  }, [openTaskDialog]);
+
+  useEffect(() => {
     let unlisten: (() => void) | undefined;
     let active = true;
 
     getCurrentWebview()
       .onDragDropEvent((event) => {
-        if (event.payload.type === "over") {
+        if (
+          event.payload.type === "enter" ||
+          event.payload.type === "over"
+        ) {
           setIsDraggingFiles(true);
           return;
         }
 
         setIsDraggingFiles(false);
         if (event.payload.type === "drop") {
-          openTaskDialog(event.payload.paths);
+          openTaskDialogRef.current(event.payload.paths);
         }
       })
       .then((handler) => {
@@ -488,7 +496,7 @@ export function useTranscriptionWorkspace() {
       active = false;
       unlisten?.();
     };
-  }, [openTaskDialog]);
+  }, []);
 
   useEffect(() => {
     if (transcriptionModels.length === 0) return;

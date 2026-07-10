@@ -1,6 +1,8 @@
 import { useState } from "react";
 import {
+  CircleCheckIcon,
   DownloadIcon,
+  HardDriveIcon,
   RefreshCwIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -9,7 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -43,11 +44,15 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format";
 import type { DownloadProgress, ModelStatus } from "@/types/transcription";
 
-const modelTraitBadges: Record<string, string[]> = {
-  "qwen3-asr-0.6b": ["速度快", "品質普通"],
-  "qwen3-asr-1.7b": ["品質高", "速度較慢"],
-  "qwen3-forced-aligner-0.6b": ["精準時間戳"],
+const modelComparisonMeta: Record<string, string> = {
+  "qwen3-asr-0.6b": "速度：快 · 品質：標準",
+  "qwen3-asr-1.7b": "速度：較慢 · 品質：高",
+  "qwen3-forced-aligner-0.6b": "用途：產生精準字幕時間",
 };
+
+function modelSizeLabel(sizeHint: string) {
+  return sizeHint.replace(/^~\s*/, "約 ");
+}
 
 export function ModelPanel({
   models,
@@ -107,7 +112,7 @@ export function ModelPanel({
         ) : (
           <div className="model-list">
             {models.map((model) => {
-              const traitBadges = modelTraitBadges[model.id] ?? [];
+              const comparisonMeta = modelComparisonMeta[model.id];
               const activeDownloadProgress =
                 isDownloading && downloadProgress?.modelId === model.id
                   ? downloadProgress
@@ -122,21 +127,49 @@ export function ModelPanel({
                 !isTranscribing;
 
               return (
-                <Card key={model.id} size="sm">
+                <Card key={model.id}>
                   <CardHeader>
-                    <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
-                      <span className="truncate">{model.title}</span>
+                    <CardTitle className="model-card-title">
+                      <span>{model.title}</span>
                       {model.recommended ? (
                         <Badge variant="secondary">建議</Badge>
+                      ) : model.role === "forcedAlignment" ? (
+                        <Badge variant="outline">字幕對齊</Badge>
                       ) : null}
-                      {traitBadges.map((trait) => (
-                        <Badge key={trait} variant="outline">
-                          {trait}
-                        </Badge>
-                      ))}
                     </CardTitle>
                     <CardDescription>{model.description}</CardDescription>
-                    <CardAction className="flex flex-wrap justify-end gap-2">
+                  </CardHeader>
+
+                  <CardContent className="model-card-content">
+                    {comparisonMeta ? (
+                      <p className="model-card-comparison">
+                        {comparisonMeta}
+                      </p>
+                    ) : null}
+                  </CardContent>
+
+                  <CardFooter className="model-card-footer">
+                    <div className="model-card-footer-row">
+                      <div className="model-card-meta">
+                        <span className="model-card-meta-item">
+                          <HardDriveIcon className="size-4" />
+                          下載大小 {modelSizeLabel(model.sizeHint)}
+                        </span>
+                        {model.installed ? (
+                          <span className="model-card-meta-item model-card-status">
+                            <CircleCheckIcon className="size-4" />
+                            已安裝
+                          </span>
+                        ) : isActiveDownload ? (
+                          <span className="model-card-meta-item model-card-status">
+                            <Spinner />
+                            下載中
+                          </span>
+                        ) : (
+                          <span className="model-card-meta-item">尚未下載</span>
+                        )}
+                      </div>
+
                       {!model.installed && !isActiveDownload ? (
                         <Button
                           size="sm"
@@ -146,13 +179,6 @@ export function ModelPanel({
                           <DownloadIcon data-icon="inline-start" />
                           下載模型
                         </Button>
-                      ) : null}
-
-                      {isActiveDownload ? (
-                        <Badge variant="secondary">
-                          <Spinner />
-                          下載中
-                        </Badge>
                       ) : null}
 
                       {model.installed ? (
@@ -167,20 +193,20 @@ export function ModelPanel({
                             disabled={!canDeleteModel}
                             render={
                               <Button
-                                variant="destructive"
+                                variant="outline"
                                 size="sm"
                                 disabled={!canDeleteModel}
                               />
                             }
                           >
                             <Trash2Icon data-icon="inline-start" />
-                            刪除
+                            移除
                           </DialogTrigger>
                           <DialogContent
                             showCloseButton={!isDeletingThisModel}
                           >
                             <DialogHeader>
-                              <DialogTitle>刪除 {model.title}</DialogTitle>
+                              <DialogTitle>移除 {model.title}</DialogTitle>
                               <DialogDescription>
                                 這會移除已下載的模型檔案；之後需重新下載才能使用此模型。
                               </DialogDescription>
@@ -207,71 +233,56 @@ export function ModelPanel({
                                 ) : (
                                   <Trash2Icon data-icon="inline-start" />
                                 )}
-                                刪除模型
+                                移除模型
                               </Button>
                             </DialogFooter>
                           </DialogContent>
                         </Dialog>
                       ) : null}
-                    </CardAction>
-                  </CardHeader>
+                    </div>
 
-                  <CardContent className="flex flex-wrap gap-2">
-                    <Badge variant="outline">{model.sizeHint}</Badge>
-                    <Badge
-                      variant={
-                        model.installed || isActiveDownload
-                          ? "secondary"
-                          : "outline"
-                      }
-                    >
-                      {model.installed
-                        ? "已安裝"
-                        : isActiveDownload
-                          ? `${activeDownloadProgress.percent.toFixed(0)}%`
-                          : "未下載"}
-                    </Badge>
-                  </CardContent>
-
-                  {isActiveDownload ? (
-                    <CardFooter className="model-download-footer">
-                      <Progress
-                        aria-label={`${model.title} 下載進度`}
-                        className="model-download-progress"
-                        value={activeDownloadProgress.percent}
-                      >
-                        <ProgressLabel className="min-w-0 flex-1 truncate">
-                          正在下載模型檔案
-                        </ProgressLabel>
-                        <ProgressValue className="shrink-0 text-foreground">
-                          {() =>
-                            `${activeDownloadProgress.percent.toFixed(0)}%`
-                          }
-                        </ProgressValue>
-                      </Progress>
-                      <div className="model-download-meta">
-                        <span className="truncate">
-                          {activeDownloadProgress.currentFile ?? "準備下載"}
-                        </span>
-                        <span>
-                          {activeDownloadProgress.fileIndex}/
-                          {activeDownloadProgress.totalFiles} 個檔案
-                        </span>
-                        <span>
-                          {formatBytes(
-                            activeDownloadProgress.fileBytesCompleted,
-                          )} /{" "}
-                          {formatBytes(activeDownloadProgress.fileTotalBytes)}
-                        </span>
-                        <span>
-                          {formatBytes(
-                            downloadMovingAverageSpeedBytesPerSec,
-                          )}
-                          /s
-                        </span>
+                    {isActiveDownload ? (
+                      <div className="model-download-footer">
+                        <Progress
+                          aria-label={`${model.title} 下載進度`}
+                          className="model-download-progress"
+                          value={activeDownloadProgress.percent}
+                        >
+                          <ProgressLabel className="min-w-0 flex-1 truncate">
+                            正在下載模型檔案
+                          </ProgressLabel>
+                          <ProgressValue className="shrink-0 text-foreground">
+                            {() =>
+                              `${activeDownloadProgress.percent.toFixed(0)}%`
+                            }
+                          </ProgressValue>
+                        </Progress>
+                        <div className="model-download-meta">
+                          <span className="truncate">
+                            {activeDownloadProgress.currentFile ?? "準備下載"}
+                          </span>
+                          <span>
+                            {activeDownloadProgress.fileIndex}/
+                            {activeDownloadProgress.totalFiles} 個檔案
+                          </span>
+                          <span>
+                            {formatBytes(
+                              activeDownloadProgress.fileBytesCompleted,
+                            )} /{" "}
+                            {formatBytes(
+                              activeDownloadProgress.fileTotalBytes,
+                            )}
+                          </span>
+                          <span>
+                            {formatBytes(
+                              downloadMovingAverageSpeedBytesPerSec,
+                            )}
+                            /s
+                          </span>
+                        </div>
                       </div>
-                    </CardFooter>
-                  ) : null}
+                    ) : null}
+                  </CardFooter>
                 </Card>
               );
             })}

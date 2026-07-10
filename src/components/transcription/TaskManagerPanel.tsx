@@ -474,7 +474,8 @@ export function TaskManagerPanel({
                       輸出 SRT 字幕
                     </FieldTitle>
                     <FieldDescription>
-                      11 種語言支援精準時間對齊；首次下載約 1.8 GB，其餘語言使用估算時間。
+                      建立可隨音訊同步顯示的字幕檔。中文、英文等支援語言會產生較精準的字幕時間，首次使用時需下載約 1.8 GB
+                      的模型；其他語言則使用估算時間。
                     </FieldDescription>
                   </FieldContent>
                   <Switch

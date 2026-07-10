@@ -4,7 +4,10 @@
 }
 
 .app-window {
-  min-height: 100vh;
+  display: flex;
+  height: 100vh;
+  min-height: 0;
+  flex-direction: column;
   overflow: hidden;
   background: var(--background);
 }
@@ -19,6 +22,55 @@
   height: 1px;
   pointer-events: none;
   background: var(--border);
+}
+
+.file-drop-overlay {
+  position: fixed;
+  inset: 12px;
+  z-index: 60;
+  display: grid;
+  pointer-events: none;
+  place-items: center;
+  border: 2px dashed color-mix(in oklch, var(--app-accent), var(--border) 32%);
+  border-radius: var(--radius-xl);
+  background: color-mix(in oklch, var(--background), var(--app-accent) 8%);
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--app-accent), transparent 84%);
+}
+
+.file-drop-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.file-drop-overlay-content strong {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.file-drop-overlay-content span {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.file-drop-overlay-icon {
+  display: grid;
+  width: 4rem;
+  height: 4rem;
+  margin-bottom: 8px;
+  place-items: center;
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--app-accent), var(--background) 86%);
+  color: var(--app-accent);
+}
+
+.file-drop-overlay-icon svg {
+  width: 2rem;
+  height: 2rem;
 }
 
 .window-toolbar {
@@ -41,15 +93,27 @@
   margin-left: auto;
 }
 
-.app-main-inset {
+.window-toolbar-copy {
   min-width: 0;
-  background: transparent;
+}
+
+.window-toolbar-primary-actions,
+.window-toolbar-utilities {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.window-toolbar-copy + .window-toolbar-utilities {
+  margin-left: auto;
 }
 
 .main-content {
   display: flex;
-  height: calc(100vh - 64px);
+  min-height: 0;
   min-width: 0;
+  flex: 1;
   flex-direction: column;
   gap: 14px;
   overflow: auto;
@@ -87,6 +151,17 @@
   min-height: 0;
   flex-direction: column;
   gap: 24px;
+}
+
+.settings-sheet {
+  gap: 0;
+}
+
+.settings-sheet-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 16px 24px;
 }
 
 .settings-section {
@@ -541,7 +616,66 @@
 .model-list {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+}
+
+.model-card-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.model-card-content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-card-comparison {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.model-card-footer {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.model-card-footer-row {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 10px;
+}
+
+.model-card-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.model-card-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.model-card-status {
+  color: var(--foreground);
+  font-weight: 500;
 }
 
 .model-download-footer {
@@ -559,7 +693,7 @@
 .model-download-meta {
   display: grid;
   min-width: 0;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px 14px;
   color: var(--muted-foreground);
@@ -729,20 +863,31 @@
 
 @media (max-width: 720px) {
   .window-toolbar {
-    align-items: flex-start;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     padding: 12px;
   }
 
   .window-toolbar-actions {
+    grid-column: 1 / -1;
     width: 100%;
+    flex-wrap: wrap;
     justify-content: flex-start;
     margin-left: 0;
   }
 
+  .window-toolbar-primary-actions {
+    flex-wrap: wrap;
+  }
+
+  .window-toolbar-utilities {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
   .main-content {
     height: auto;
-    min-height: calc(100vh - 64px);
+    min-height: 0;
     padding: 12px;
   }
 
