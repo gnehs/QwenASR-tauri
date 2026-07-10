@@ -154,15 +154,11 @@ export function ModelPanel({
                           <HardDriveIcon className="size-4" />
                           下載大小{modelSizeLabel(model.sizeHint)}
                         </span>
-                        {!model.installed ? (
-                          isActiveDownload ? (
-                            <span className="model-card-meta-item model-card-status">
-                              <Spinner />
-                              下載中
-                            </span>
-                          ) : (
-                            <span className="model-card-meta-item">尚未下載</span>
-                          )
+                        {isActiveDownload ? (
+                          <span className="model-card-meta-item model-card-status">
+                            <Spinner />
+                            下載中
+                          </span>
                         ) : null}
                       </div>
 
