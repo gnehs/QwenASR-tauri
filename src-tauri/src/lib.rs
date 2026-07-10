@@ -15,7 +15,7 @@ use models::{
 use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
-use tauri::TitleBarStyle;
+use tauri::{LogicalPosition, TitleBarStyle};
 
 #[tauri::command]
 fn list_available_models() -> AppResult<Vec<ModelStatus>> {
@@ -77,7 +77,10 @@ pub fn run() {
                 .min_inner_size(980.0, 680.0);
 
             #[cfg(target_os = "macos")]
-            let window_builder = window_builder.title_bar_style(TitleBarStyle::Transparent);
+            let window_builder = window_builder
+                .title_bar_style(TitleBarStyle::Overlay)
+                .hidden_title(true)
+                .traffic_light_position(LogicalPosition::new(14.0, 25.0));
 
             let window = window_builder.build()?;
 

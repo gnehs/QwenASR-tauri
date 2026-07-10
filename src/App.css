@@ -14,18 +14,6 @@
   background: var(--background);
 }
 
-.app-window::before {
-  content: "";
-  position: fixed;
-  top: 0;
-  right: 0;
-  left: 0;
-  z-index: 50;
-  height: 1px;
-  pointer-events: none;
-  background: var(--border);
-}
-
 .file-drop-overlay {
   position: fixed;
   inset: 12px;
@@ -77,12 +65,17 @@
 
 .window-toolbar {
   display: flex;
-  min-height: 64px;
+  min-height: 48px;
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid var(--border);
   padding: 0 var(--app-content-padding-inline);
+  user-select: none;
   background: color-mix(in oklch, var(--background), var(--muted) 50%);
+}
+
+.window-toolbar[data-macos="true"] {
+  padding-left: 86px;
 }
 
 .window-toolbar-actions {
@@ -879,6 +872,10 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     padding: 12px var(--app-content-padding-inline);
+  }
+
+  .window-toolbar[data-macos="true"] {
+    padding-left: 86px;
   }
 
   .window-toolbar-actions {

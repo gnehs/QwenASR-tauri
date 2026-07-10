@@ -16,12 +16,28 @@ export function AppToolbar({
   actions?: ReactNode;
   utilities?: ReactNode;
 }) {
+  const isMacOS = navigator.userAgent.includes("Mac OS X");
+
   return (
-    <header className="window-toolbar">
-      <div className="window-toolbar-copy">
-        <h1 className="truncate font-heading text-base font-medium">{title}</h1>
+    <header
+      className="window-toolbar"
+      data-macos={isMacOS || undefined}
+      data-tauri-drag-region
+    >
+      <div className="window-toolbar-copy" data-tauri-drag-region>
+        <h1
+          className="truncate font-heading text-base font-medium"
+          data-tauri-drag-region
+        >
+          {title}
+        </h1>
         {subtitle ? (
-          <p className="truncate text-sm text-muted-foreground">{subtitle}</p>
+          <p
+            className="truncate text-sm text-muted-foreground"
+            data-tauri-drag-region
+          >
+            {subtitle}
+          </p>
         ) : null}
       </div>
       {actions || !ffmpeg.available ? (
