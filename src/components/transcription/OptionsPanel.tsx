@@ -66,7 +66,7 @@ export function OptionsPanel({
             多數情況可以維持自動偵測，只在需要指定語言或輸出字幕時修改。
           </SheetDescription>
         </SheetHeader>
-        <div className="options-sheet-body">
+        <div className="options-sheet-body scroll-fade">
           <FieldGroup>
             <Field>
               <FieldLabel>輸出語言</FieldLabel>

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  CircleCheckIcon,
   DownloadIcon,
   HardDriveIcon,
   RefreshCwIcon,
@@ -153,21 +152,18 @@ export function ModelPanel({
                       <div className="model-card-meta">
                         <span className="model-card-meta-item">
                           <HardDriveIcon className="size-4" />
-                          下載大小 {modelSizeLabel(model.sizeHint)}
+                          下載大小{modelSizeLabel(model.sizeHint)}
                         </span>
-                        {model.installed ? (
-                          <span className="model-card-meta-item model-card-status">
-                            <CircleCheckIcon className="size-4" />
-                            已安裝
-                          </span>
-                        ) : isActiveDownload ? (
-                          <span className="model-card-meta-item model-card-status">
-                            <Spinner />
-                            下載中
-                          </span>
-                        ) : (
-                          <span className="model-card-meta-item">尚未下載</span>
-                        )}
+                        {!model.installed ? (
+                          isActiveDownload ? (
+                            <span className="model-card-meta-item model-card-status">
+                              <Spinner />
+                              下載中
+                            </span>
+                          ) : (
+                            <span className="model-card-meta-item">尚未下載</span>
+                          )
+                        ) : null}
                       </div>
 
                       {!model.installed && !isActiveDownload ? (

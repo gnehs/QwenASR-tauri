@@ -20,7 +20,7 @@ export function RuntimePanel({ ffmpeg }: { ffmpeg: FfmpegStatus }) {
         <p className="settings-section-description">將音訊轉換為支援的格式。</p>
       </div>
       <div className="settings-section-content">
-        <Card size="sm" className="tool-card">
+        <Card size="sm">
           <CardHeader>
             <CardTitle>FFmpeg</CardTitle>
             <CardDescription className="truncate">

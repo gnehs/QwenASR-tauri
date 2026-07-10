@@ -115,8 +115,8 @@ pnpm tauri build
 
 | ID | Hugging Face repo | 大小提示 | 說明 |
 | --- | --- | --- | --- |
-| `qwen3-asr-0.6b` | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | ~1.2 GB | 預設推薦，適合大多數單次與批次轉錄 |
-| `qwen3-asr-1.7b` | [`Qwen/Qwen3-ASR-1.7B`](https://huggingface.co/Qwen/Qwen3-ASR-1.7B) | ~3.5 GB | 較高準確度，適合重要錄音或較複雜環境 |
+| `qwen3-asr-0.6b` | [`Qwen/Qwen3-ASR-0.6B`](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) | ~1.9 GB | 預設推薦，適合大多數單次與批次轉錄 |
+| `qwen3-asr-1.7b` | [`Qwen/Qwen3-ASR-1.7B`](https://huggingface.co/Qwen/Qwen3-ASR-1.7B) | ~4.7 GB | 較高準確度，適合重要錄音或較複雜環境 |
 | `qwen3-forced-aligner-0.6b` | [`Qwen/Qwen3-ForcedAligner-0.6B`](https://huggingface.co/Qwen/Qwen3-ForcedAligner-0.6B) | ~1.8 GB | 將逐字稿與音訊對齊，產生字／詞級時間戳；不會出現在轉錄模型選單 |
 
 模型會由 app 下載到系統應用程式資料目錄，不會存進 repository。macOS 通常會落在：

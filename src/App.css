@@ -159,6 +159,11 @@
   gap: 0;
 }
 
+.settings-sheet [data-slot="sheet-title"] {
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
 .settings-sheet-body {
   min-height: 0;
   flex: 1;
@@ -709,10 +714,6 @@
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.25;
-}
-
-.tool-card {
-  border-radius: var(--radius-lg);
 }
 
 .tool-install-hint {

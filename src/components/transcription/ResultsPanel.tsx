@@ -84,7 +84,10 @@ export function ResultsPanel({
             </EmptyHeader>
           </Empty>
         ) : (
-          <ScrollArea className="h-full">
+          <ScrollArea
+            className="h-full"
+            viewportClassName="scroll-fade"
+          >
             <div className="flex flex-col gap-4 pr-3">
               <div className="result-summary">
                 <FileTextIcon />

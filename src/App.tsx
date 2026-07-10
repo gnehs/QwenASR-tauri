@@ -81,7 +81,7 @@ function App() {
                     <SheetTitle>設定</SheetTitle>
                     <SheetDescription>管理模型與相關工具。</SheetDescription>
                   </SheetHeader>
-                  <div className="settings-sheet-body">
+                  <div className="settings-sheet-body scroll-fade">
                     <SettingsPanel
                       models={workspace.models}
                       downloadProgress={workspace.downloadProgress}

@@ -98,7 +98,10 @@ export function BatchTranscriptionPanel({
             placeholder="預設輸出到各來源檔案所在資料夾"
           />
           <OptionsPanel options={options} onChange={onOptionsChange} />
-          <ScrollArea className="batch-list">
+          <ScrollArea
+            className="batch-list"
+            viewportClassName="scroll-fade"
+          >
             {files.length > 0 ? (
               <Table>
                 <TableHeader>

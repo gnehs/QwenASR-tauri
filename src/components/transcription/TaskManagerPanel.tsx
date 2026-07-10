@@ -222,6 +222,7 @@ export function TaskManagerPanel({
           <div className="task-list-content">
             <ScrollArea
               className={cn("task-table-wrap", tasks.length === 0 && "is-empty")}
+              viewportClassName="scroll-fade"
             >
               {tasks.length > 0 ? (
                 <Table className="task-table">
@@ -389,7 +390,7 @@ export function TaskManagerPanel({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="task-dialog-body">
+          <div className="task-dialog-body scroll-fade">
             <FieldGroup>
               <Field>
                 <FieldLabel>轉錄模型</FieldLabel>
@@ -518,7 +519,10 @@ export function TaskManagerPanel({
 
             <Separator />
 
-            <ScrollArea className="task-draft-files">
+            <ScrollArea
+              className="task-draft-files"
+              viewportClassName="scroll-fade"
+            >
               {taskDraft.files.map((file) => (
                 <div key={file} className="task-draft-file">
                   <FileAudioIcon />
@@ -679,7 +683,10 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
             <Badge variant="outline">{partialSegments.length} 段</Badge>
           </div>
           {partialSegments.length > 0 ? (
-            <ScrollArea className="task-partial-scroll">
+            <ScrollArea
+              className="task-partial-scroll"
+              viewportClassName="scroll-fade"
+            >
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -715,7 +722,10 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
   if (!result) return null;
 
   return (
-    <ScrollArea className="task-result-scroll">
+    <ScrollArea
+      className="task-result-scroll"
+      viewportClassName="scroll-fade"
+    >
       <div className="task-result-stack">
         <div className="task-result-meta">
           <div>
