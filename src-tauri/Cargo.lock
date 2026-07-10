@@ -4365,9 +4365,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "qwen3_asr"
+name = "qwen3-asr-rs"
 version = "0.2.0"
-source = "git+https://github.com/second-state/qwen3_asr_rs?tag=v0.2.0#02262707b9d7222583098766a88e1c830a28a267"
 dependencies = [
  "anyhow",
  "axum",
@@ -4398,7 +4397,7 @@ dependencies = [
  "hound",
  "objc2-app-kit",
  "opencc-rs",
- "qwen3_asr",
+ "qwen3-asr-rs",
  "rustfft",
  "serde",
  "serde_json",
