@@ -40,6 +40,7 @@ fn build_mlx() {
         .define("MLX_BUILD_TESTS", "OFF")
         .define("MLX_BUILD_EXAMPLES", "OFF")
         .define("MLX_BUILD_BENCHMARKS", "OFF")
+        .define("MLX_C_BUILD_EXAMPLES", "OFF")
         .define("BUILD_SHARED_LIBS", "OFF")
         .build();
 
