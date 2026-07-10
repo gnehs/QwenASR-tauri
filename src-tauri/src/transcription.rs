@@ -36,8 +36,10 @@ const VAD_PHASE_START: f64 = 0.0;
 const VAD_PHASE_RATIO: f64 = 0.05;
 const VAD_PHASE_END: f64 = VAD_PHASE_START + VAD_PHASE_RATIO;
 const TRANSCRIBE_PHASE_START: f64 = VAD_PHASE_END;
-const TRANSCRIBE_PHASE_END: f64 = 0.99;
-const FINALIZE_PHASE_START: f64 = TRANSCRIBE_PHASE_END;
+const TRANSCRIBE_PHASE_END_WITH_ALIGNMENT: f64 = 0.72;
+const TRANSCRIBE_PHASE_END_WITHOUT_ALIGNMENT: f64 = 0.99;
+const ALIGN_PHASE_START: f64 = 0.75;
+const ALIGN_PHASE_END: f64 = 0.99;
 const ASR_CHUNK_OVERHEAD_MS: u64 = 500;
 static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
 const ASR_LANGUAGES: &[&str] = &[
@@ -151,11 +153,7 @@ fn transcribe_file_inner(
         started,
         "running",
         "loadingModel",
-        if use_forced_aligner {
-            "載入 QwenASR 與 ForcedAligner 模型"
-        } else {
-            "載入 QwenASR 模型"
-        },
+        "載入 QwenASR 模型",
         Some(&request.audio_path),
         Some(&request.audio_path),
         1,
@@ -166,22 +164,60 @@ fn transcribe_file_inner(
 
     let device = default_device();
     let engine = load_engine(&model_path, device)?;
-    let aligner = aligner_path
-        .as_deref()
-        .map(|path| load_forced_aligner(path, device))
-        .transpose()?;
-    let mut result = transcribe_with_context(
+    let asr_range_end = if use_forced_aligner {
+        progress_between(
+            TRANSCRIPTION_WORK_START_PERCENT,
+            TRANSCRIPTION_WORK_END_PERCENT,
+            TRANSCRIBE_PHASE_END_WITH_ALIGNMENT,
+        )
+    } else {
+        progress_between(
+            TRANSCRIPTION_WORK_START_PERCENT,
+            TRANSCRIPTION_WORK_END_PERCENT,
+            TRANSCRIBE_PHASE_END_WITHOUT_ALIGNMENT,
+        )
+    };
+    let mut pending = transcribe_with_context(
         app,
         started,
         &engine,
-        aligner.as_ref(),
         &request.audio_path,
         &request.options,
         1,
         1,
         TRANSCRIPTION_WORK_START_PERCENT,
-        TRANSCRIPTION_WORK_END_PERCENT,
+        asr_range_end,
     )?;
+    pending.range_start = if use_forced_aligner {
+        progress_between(
+            TRANSCRIPTION_WORK_START_PERCENT,
+            TRANSCRIPTION_WORK_END_PERCENT,
+            ALIGN_PHASE_START,
+        )
+    } else {
+        asr_range_end
+    };
+    pending.range_end = progress_between(
+        TRANSCRIPTION_WORK_START_PERCENT,
+        TRANSCRIPTION_WORK_END_PERCENT,
+        ALIGN_PHASE_END,
+    );
+    drop(engine);
+    let aligner = load_aligner_after_transcription(
+        app,
+        started,
+        aligner_path.as_deref(),
+        device,
+        Some(&request.audio_path),
+        1,
+        1,
+        progress_between(
+            TRANSCRIPTION_WORK_START_PERCENT,
+            TRANSCRIPTION_WORK_END_PERCENT,
+            ALIGN_PHASE_START,
+        ),
+    )?;
+    let mut result = finalize_transcription_with_context(app, started, aligner.as_ref(), pending)?;
     result.duration_ms = started.elapsed().as_millis();
 
     emit_progress(
@@ -247,11 +283,7 @@ pub fn transcribe_batch(
         started,
         "running",
         "loadingModel",
-        if use_forced_aligner {
-            "載入 QwenASR 與 ForcedAligner 模型"
-        } else {
-            "載入 QwenASR 模型"
-        },
+        "載入 QwenASR 模型",
         None,
         None,
         0,
@@ -262,31 +294,35 @@ pub fn transcribe_batch(
 
     let device = default_device();
     let engine = load_engine(&model_path, device)?;
-    let aligner = aligner_path
-        .as_deref()
-        .map(|path| load_forced_aligner(path, device))
-        .transpose()?;
     let total = request.audio_paths.len();
-    let mut results = Vec::with_capacity(total);
+    let mut pending_results = Vec::with_capacity(total);
 
     for (index, audio_path) in request.audio_paths.iter().enumerate() {
         let file_index = index + 1;
-        let range_start = progress_between(
+        let asr_request_end = progress_between(
             TRANSCRIPTION_WORK_START_PERCENT,
             TRANSCRIPTION_WORK_END_PERCENT,
+            if use_forced_aligner {
+                TRANSCRIBE_PHASE_END_WITH_ALIGNMENT
+            } else {
+                TRANSCRIBE_PHASE_END_WITHOUT_ALIGNMENT
+            },
+        );
+        let range_start = progress_between(
+            TRANSCRIPTION_WORK_START_PERCENT,
+            asr_request_end,
             index as f64 / total as f64,
         );
         let range_end = progress_between(
             TRANSCRIPTION_WORK_START_PERCENT,
-            TRANSCRIPTION_WORK_END_PERCENT,
+            asr_request_end,
             file_index as f64 / total as f64,
         );
 
-        let result = match transcribe_with_context(
+        let pending = match transcribe_with_context(
             &app,
             started,
             &engine,
-            aligner.as_ref(),
             audio_path,
             &request.options,
             file_index,
@@ -312,6 +348,75 @@ pub fn transcribe_batch(
                 return Err(error);
             }
         };
+        let mut pending = pending;
+        if use_forced_aligner {
+            let align_request_start = progress_between(
+                TRANSCRIPTION_WORK_START_PERCENT,
+                TRANSCRIPTION_WORK_END_PERCENT,
+                ALIGN_PHASE_START,
+            );
+            let align_request_end = progress_between(
+                TRANSCRIPTION_WORK_START_PERCENT,
+                TRANSCRIPTION_WORK_END_PERCENT,
+                ALIGN_PHASE_END,
+            );
+            pending.range_start = progress_between(
+                align_request_start,
+                align_request_end,
+                index as f64 / total as f64,
+            );
+            pending.range_end = progress_between(
+                align_request_start,
+                align_request_end,
+                file_index as f64 / total as f64,
+            );
+        } else {
+            pending.range_start = range_end;
+            pending.range_end = range_end;
+        }
+        pending_results.push(pending);
+    }
+
+    drop(engine);
+    let aligner = load_aligner_after_transcription(
+        &app,
+        started,
+        aligner_path.as_deref(),
+        device,
+        None,
+        total,
+        total,
+        progress_between(
+            TRANSCRIPTION_WORK_START_PERCENT,
+            TRANSCRIPTION_WORK_END_PERCENT,
+            ALIGN_PHASE_START,
+        ),
+    )?;
+    let mut results = Vec::with_capacity(total);
+    for pending in pending_results {
+        let audio_path = pending.audio_path.clone();
+        let file_index = pending.file_index;
+        let range_end = pending.range_end;
+        let result =
+            match finalize_transcription_with_context(&app, started, aligner.as_ref(), pending) {
+                Ok(result) => result,
+                Err(error) => {
+                    emit_progress(
+                        &app,
+                        started,
+                        "error",
+                        "error",
+                        &format!("轉錄失敗：{error}"),
+                        Some(&audio_path),
+                        Some(&audio_path),
+                        file_index,
+                        total,
+                        range_end,
+                        None,
+                    );
+                    return Err(error);
+                }
+            };
         results.push(result);
     }
 
@@ -527,6 +632,62 @@ fn load_forced_aligner(model_path: &Path, device: Device) -> AppResult<ForcedAli
     ForcedAlignerInference::load(model_path, device)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn load_aligner_after_transcription(
+    app: &AppHandle,
+    started: Instant,
+    model_path: Option<&Path>,
+    device: Device,
+    audio_path: Option<&str>,
+    file_index: usize,
+    total_files: usize,
+    percent: f64,
+) -> AppResult<Option<ForcedAlignerInference>> {
+    let Some(model_path) = model_path else {
+        return Ok(None);
+    };
+
+    emit_progress(
+        app,
+        started,
+        "running",
+        "loadingModel",
+        "ASR 轉錄完成，載入 ForcedAligner 模型",
+        audio_path,
+        audio_path,
+        file_index,
+        total_files,
+        percent,
+        None,
+    );
+
+    load_forced_aligner(model_path, device).map(Some)
+}
+
+struct PendingChunk {
+    chunk_index: usize,
+    range: AudioRange,
+    audio: audio::PreparedAudio,
+    raw_text: String,
+    output_text: String,
+    alignment_language: Option<&'static str>,
+}
+
+struct PendingTranscription {
+    audio_path: String,
+    options: TranscribeOptions,
+    file_index: usize,
+    total_files: usize,
+    range_start: f64,
+    range_end: f64,
+    total_chunks: usize,
+    total_speech_ms: u64,
+    skipped_silence_ms: u64,
+    transcript_parts: Vec<String>,
+    chunks: Vec<PendingChunk>,
+    duration_ms: u128,
+}
+
 fn default_device() -> Device {
     #[cfg(target_os = "macos")]
     {
@@ -549,14 +710,13 @@ fn transcribe_with_context(
     app: &AppHandle,
     progress_started: Instant,
     engine: &AsrInference,
-    aligner: Option<&ForcedAlignerInference>,
     audio_path: &str,
     options: &TranscribeOptions,
     file_index: usize,
     total_files: usize,
     range_start: f64,
     range_end: f64,
-) -> AppResult<TranscriptionResult> {
+) -> AppResult<PendingTranscription> {
     let started = Instant::now();
     emit_progress(
         app,
@@ -620,7 +780,7 @@ fn transcribe_with_context(
     let mut processed_audio_ms = 0u64;
     let mut processed_asr_work_ms = 0u64;
     let mut transcript_parts = Vec::with_capacity(chunks.len());
-    let mut segments = Vec::new();
+    let mut pending_chunks = Vec::with_capacity(chunks.len());
     let total_chunks = chunks.len();
     let total_asr_work_ms = total_chunk_work_ms(&chunks);
     let vad_message = if skipped_silence_ms > 0 {
@@ -665,7 +825,7 @@ fn transcribe_with_context(
         let before_ratio = processed_asr_work_ms as f64 / total_asr_work_ms as f64;
         let before_percent = progress_between(
             progress_between(range_start, range_end, TRANSCRIBE_PHASE_START),
-            progress_between(range_start, range_end, TRANSCRIBE_PHASE_END),
+            range_end,
             before_ratio,
         );
         let before_eta_ms =
@@ -708,54 +868,15 @@ fn transcribe_with_context(
             let detected_language = parse_auto_asr_language(&raw_result.raw_output)
                 .unwrap_or(raw_result.language.as_str());
             let alignment_language = alignment_language(asr_language.as_deref(), detected_language);
-            let aligned_segments = if let (Some(aligner), Some(language)) =
-                (aligner, alignment_language)
-            {
-                emit_chunk_progress(
-                    app,
-                    progress_started,
-                    audio_path,
-                    file_index,
-                    total_files,
-                    chunk_index,
-                    total_chunks,
-                    *chunk,
-                    processed_audio_ms,
-                    total_chunk_audio_ms,
-                    skipped_silence_ms,
-                    before_percent,
-                    before_eta_ms,
-                    "aligningTimestamps",
-                    &format!("對齊第 {chunk_index} / {total_chunks} 個片段的時間戳"),
-                    build_partial_transcript(&transcript_parts),
-                );
-                let aligned_units = aligner
-                    .align(chunk_audio_path, &raw_chunk_text, language)
-                    .map_err(|error| {
-                        AppError::Transcription(format!(
-                            "Qwen3 ForcedAligner failed on chunk {chunk_index}/{total_chunks}: {error}"
-                        ))
-                    })?;
-                build_aligned_segments_with_offset(
-                    &raw_chunk_text,
-                    &aligned_units,
-                    language,
-                    output_language.as_deref(),
-                    chunk.start_ms(),
-                    chunk.duration_ms(),
-                )?
-            } else {
-                None
-            };
-
-            segments.extend(aligned_segments.unwrap_or_else(|| {
-                build_approximate_segments_with_offset(
-                    &chunk_text,
-                    chunk.duration_ms(),
-                    chunk.start_ms(),
-                )
-            }));
-            transcript_parts.push(chunk_text);
+            transcript_parts.push(chunk_text.clone());
+            pending_chunks.push(PendingChunk {
+                chunk_index,
+                range: *chunk,
+                audio: chunk_audio,
+                raw_text: raw_chunk_text,
+                output_text: chunk_text,
+                alignment_language,
+            });
         }
 
         processed_audio_ms = processed_audio_ms.saturating_add(chunk.duration_ms());
@@ -763,7 +884,7 @@ fn transcribe_with_context(
         let after_ratio = processed_asr_work_ms as f64 / total_asr_work_ms as f64;
         let after_percent = progress_between(
             progress_between(range_start, range_end, TRANSCRIBE_PHASE_START),
-            progress_between(range_start, range_end, TRANSCRIBE_PHASE_END),
+            range_end,
             after_ratio,
         );
         let after_eta_ms =
@@ -788,77 +909,152 @@ fn transcribe_with_context(
         );
     }
 
-    let partial_transcript = build_partial_transcript(&transcript_parts);
-    let finalize_percent = progress_between(range_start, range_end, FINALIZE_PHASE_START);
+    Ok(PendingTranscription {
+        audio_path: audio_path.to_string(),
+        options: options.clone(),
+        file_index,
+        total_files,
+        range_start: range_end,
+        range_end,
+        total_chunks,
+        total_speech_ms: total_chunk_audio_ms,
+        skipped_silence_ms,
+        transcript_parts,
+        chunks: pending_chunks,
+        duration_ms: started.elapsed().as_millis(),
+    })
+}
+
+fn finalize_transcription_with_context(
+    app: &AppHandle,
+    progress_started: Instant,
+    aligner: Option<&ForcedAlignerInference>,
+    pending: PendingTranscription,
+) -> AppResult<TranscriptionResult> {
+    let alignment_started = Instant::now();
+    let partial_transcript = build_partial_transcript(&pending.transcript_parts);
+    let output_language = normalize_output_language(pending.options.language.as_deref());
+    let total_alignment_ms = pending
+        .chunks
+        .iter()
+        .map(|chunk| chunk.range.duration_ms())
+        .sum::<u64>()
+        .max(1);
+    let mut processed_alignment_ms = 0u64;
+    let mut segments = Vec::new();
+
+    for chunk in pending.chunks {
+        let before_ratio = processed_alignment_ms as f64 / total_alignment_ms as f64;
+        let before_percent = progress_between(pending.range_start, pending.range_end, before_ratio);
+        let before_eta_ms = estimate_remaining_ms(
+            alignment_started,
+            processed_alignment_ms,
+            total_alignment_ms,
+        );
+        let aligned_segments = if let (Some(aligner), Some(language)) =
+            (aligner, chunk.alignment_language)
+        {
+            emit_chunk_progress(
+                app,
+                progress_started,
+                &pending.audio_path,
+                pending.file_index,
+                pending.total_files,
+                chunk.chunk_index,
+                pending.total_chunks,
+                chunk.range,
+                processed_alignment_ms,
+                pending.total_speech_ms,
+                pending.skipped_silence_ms,
+                before_percent,
+                before_eta_ms,
+                "aligningTimestamps",
+                &format!(
+                    "對齊第 {} / {} 個片段的時間戳",
+                    chunk.chunk_index, pending.total_chunks
+                ),
+                partial_transcript.clone(),
+            );
+            let chunk_audio_path = chunk.audio.inference_path().to_str().ok_or_else(|| {
+                AppError::Transcription("Chunk audio path contains unsupported characters.".into())
+            })?;
+            let aligned_units = aligner
+                .align(chunk_audio_path, &chunk.raw_text, language)
+                .map_err(|error| {
+                    AppError::Transcription(format!(
+                        "Qwen3 ForcedAligner failed on chunk {}/{}: {error}",
+                        chunk.chunk_index, pending.total_chunks
+                    ))
+                })?;
+            build_aligned_segments_with_offset(
+                &chunk.raw_text,
+                &aligned_units,
+                language,
+                output_language.as_deref(),
+                chunk.range.start_ms(),
+                chunk.range.duration_ms(),
+            )?
+        } else {
+            None
+        };
+
+        segments.extend(aligned_segments.unwrap_or_else(|| {
+            build_approximate_segments_with_offset(
+                &chunk.output_text,
+                chunk.range.duration_ms(),
+                chunk.range.start_ms(),
+            )
+        }));
+        processed_alignment_ms = processed_alignment_ms.saturating_add(chunk.range.duration_ms());
+    }
+
     emit_progress_with_metrics(
         app,
         progress_started,
         "running",
-        if options.write_srt {
+        if pending.options.write_srt {
             "writingSrt"
         } else {
             "finalizing"
         },
-        if options.write_srt {
+        if pending.options.write_srt {
             "寫入 SRT 字幕"
         } else {
             "整理轉錄結果"
         },
-        Some(audio_path),
-        Some(audio_path),
-        file_index,
-        total_files,
-        finalize_percent,
+        Some(&pending.audio_path),
+        Some(&pending.audio_path),
+        pending.file_index,
+        pending.total_files,
+        pending.range_end,
         Some(0),
         Some(ProgressMetrics {
-            chunk_index: Some(total_chunks),
-            total_chunks: Some(total_chunks),
+            chunk_index: Some(pending.total_chunks),
+            total_chunks: Some(pending.total_chunks),
             chunk_start_ms: None,
             chunk_end_ms: None,
-            processed_audio_ms: Some(total_chunk_audio_ms),
-            total_speech_ms: Some(total_chunk_audio_ms),
-            skipped_silence_ms: Some(skipped_silence_ms),
+            processed_audio_ms: Some(pending.total_speech_ms),
+            total_speech_ms: Some(pending.total_speech_ms),
+            skipped_silence_ms: Some(pending.skipped_silence_ms),
             partial_transcript: partial_transcript.clone(),
         }),
     );
 
-    let text = transcript_parts.join("\n");
-    let srt_path = if options.write_srt {
-        Some(write_srt(audio_path, options, &segments)?)
+    let text = pending.transcript_parts.join("\n");
+    let srt_path = if pending.options.write_srt {
+        Some(write_srt(&pending.audio_path, &pending.options, &segments)?)
     } else {
         None
     };
 
-    emit_progress_with_metrics(
-        app,
-        progress_started,
-        "running",
-        "finalizing",
-        "檔案處理完成",
-        Some(audio_path),
-        Some(audio_path),
-        file_index,
-        total_files,
-        range_end,
-        Some(0),
-        Some(ProgressMetrics {
-            chunk_index: Some(total_chunks),
-            total_chunks: Some(total_chunks),
-            chunk_start_ms: None,
-            chunk_end_ms: None,
-            processed_audio_ms: Some(total_chunk_audio_ms),
-            total_speech_ms: Some(total_chunk_audio_ms),
-            skipped_silence_ms: Some(skipped_silence_ms),
-            partial_transcript,
-        }),
-    );
-
     Ok(TranscriptionResult {
-        audio_path: audio_path.to_string(),
+        audio_path: pending.audio_path,
         text,
         segments,
         srt_path,
-        duration_ms: started.elapsed().as_millis(),
+        duration_ms: pending
+            .duration_ms
+            .saturating_add(alignment_started.elapsed().as_millis()),
     })
 }
 
@@ -1267,12 +1463,12 @@ fn push_segment_unit(units: &mut Vec<String>, current: &mut String, current_char
 fn is_hard_boundary(character: char) -> bool {
     matches!(
         character,
-        '。' | '！' | '？' | '!' | '?' | '；' | ';' | '\n'
+        '。' | '，' | '！' | '？' | '!' | '?' | '；' | ';' | '\n'
     )
 }
 
 fn is_soft_boundary(character: char) -> bool {
-    matches!(character, '，' | ',' | '、' | '：' | ':')
+    matches!(character, ',' | '、' | '：' | ':')
 }
 
 fn weighted_char_count(text: &str) -> usize {
@@ -1295,7 +1491,7 @@ mod tests {
     }
 
     #[test]
-    fn allocates_vad_to_five_percent_and_gives_remaining_progress_to_asr() {
+    fn orders_vad_asr_alignment_and_finalization_progress() {
         assert_roughly_eq(
             TRANSCRIPTION_WORK_START_PERCENT,
             MODEL_LOAD_PROGRESS_PERCENT,
@@ -1303,7 +1499,13 @@ mod tests {
         assert_roughly_eq(VAD_PHASE_START, 0.0);
         assert_roughly_eq(VAD_PHASE_END - VAD_PHASE_START, 0.05);
         assert_roughly_eq(TRANSCRIBE_PHASE_START, VAD_PHASE_END);
-        assert_roughly_eq(FINALIZE_PHASE_START, TRANSCRIBE_PHASE_END);
+        let asr_end = progress_between(0.0, 1.0, TRANSCRIBE_PHASE_END_WITH_ALIGNMENT);
+        let alignment_start = progress_between(0.0, 1.0, ALIGN_PHASE_START);
+        let alignment_end = progress_between(0.0, 1.0, ALIGN_PHASE_END);
+        let no_alignment_end = progress_between(0.0, 1.0, TRANSCRIBE_PHASE_END_WITHOUT_ALIGNMENT);
+        assert!(asr_end < alignment_start);
+        assert!(alignment_start < alignment_end);
+        assert!(alignment_end <= no_alignment_end);
     }
 
     #[test]
@@ -1476,7 +1678,8 @@ mod tests {
             units,
             vec![
                 "AI幫你股票賺了很多錢嗎？",
-                "我們今天討論風險控管，還有資產配置。",
+                "我們今天討論風險控管，",
+                "還有資產配置。",
                 "最後看實際案例。"
             ]
         );
@@ -1563,7 +1766,7 @@ mod tests {
         ];
 
         let segments = build_aligned_segments_with_offset(
-            "第一句。第二句。",
+            "第一句，第二句。",
             &aligned,
             "Chinese",
             Some("Chinese"),
@@ -1574,7 +1777,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(segments.len(), 2);
-        assert_eq!(segments[0].text, "第一句。");
+        assert_eq!(segments[0].text, "第一句，");
         assert_eq!(segments[0].start_ms, 1_080);
         assert_eq!(segments[0].end_ms, 1_400);
         assert_eq!(segments[1].text, "第二句。");

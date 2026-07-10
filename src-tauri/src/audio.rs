@@ -372,6 +372,16 @@ mod tests {
     }
 
     #[test]
+    fn temporary_chunk_audio_is_removed_when_released() {
+        let prepared = write_temp_asr_wav(&[1, -1, 2, -2]).unwrap();
+        let path = prepared.inference_path().to_path_buf();
+
+        assert!(path.is_file());
+        drop(prepared);
+        assert!(!path.exists());
+    }
+
+    #[test]
     fn redacts_input_and_output_paths_from_ffmpeg_errors() {
         let input = Path::new("/Users/example/Private Recording.m4a");
         let output = Path::new("/tmp/qwenasr-tauri/private.wav");

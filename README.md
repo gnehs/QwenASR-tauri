@@ -140,7 +140,8 @@ wav, mp3, m4a, aac, flac, ogg, mp4, mov, mkv, webm
 若啟用 SRT 輸出：
 
 - app 會自動確認並下載 `Qwen3 ForcedAligner 0.6B`
-- 每個 FireRedVAD 片段完成 ASR 後，會以原始逐字稿執行 ForcedAligner，再依句子分組成可閱讀的字幕 cue
+- app 會先完成請求內所有 FireRedVAD 片段的 ASR，釋放 ASR 模型後才載入 ForcedAligner，避免兩個模型交錯推論與同時常駐
+- 對齊階段會以各片段的原始逐字稿執行 ForcedAligner，再依「，」「。」等標點分組成可閱讀的字幕 cue；暫存片段會在處理完成或失敗時自動清理
 - ForcedAligner 支援 Chinese、English、Cantonese、French、German、Italian、Japanese、Korean、Portuguese、Russian、Spanish；其他語言仍會輸出以片段長度估算的時間軸
 - 有指定輸出資料夾時，SRT 會寫入該資料夾
 - 未指定輸出資料夾時，SRT 會寫在來源檔案同層
