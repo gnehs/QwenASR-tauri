@@ -476,7 +476,7 @@ struct ProgressMetrics {
     processed_audio_ms: Option<u64>,
     total_speech_ms: Option<u64>,
     skipped_silence_ms: Option<u64>,
-    partial_transcript: Option<String>,
+    partial_segments: Option<Vec<TranscriptSegment>>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -522,7 +522,7 @@ fn emit_progress_with_metrics(
             processed_audio_ms: metrics.processed_audio_ms,
             total_speech_ms: metrics.total_speech_ms,
             skipped_silence_ms: metrics.skipped_silence_ms,
-            partial_transcript: metrics.partial_transcript,
+            partial_segments: metrics.partial_segments,
         },
     );
 }
@@ -544,7 +544,7 @@ fn emit_chunk_progress(
     eta_ms: Option<u128>,
     phase: &str,
     message: &str,
-    partial_transcript: Option<String>,
+    partial_segments: Option<Vec<TranscriptSegment>>,
 ) {
     emit_progress_with_metrics(
         app,
@@ -566,7 +566,7 @@ fn emit_chunk_progress(
             processed_audio_ms: Some(processed_audio_ms),
             total_speech_ms: Some(total_speech_ms),
             skipped_silence_ms: Some(skipped_silence_ms),
-            partial_transcript,
+            partial_segments,
         }),
     );
 }
@@ -684,6 +684,7 @@ struct PendingTranscription {
     total_speech_ms: u64,
     skipped_silence_ms: u64,
     transcript_parts: Vec<String>,
+    vad_estimated_segments: Vec<TranscriptSegment>,
     chunks: Vec<PendingChunk>,
     duration_ms: u128,
 }
@@ -781,6 +782,7 @@ fn transcribe_with_context(
     let mut processed_asr_work_ms = 0u64;
     let mut transcript_parts = Vec::with_capacity(chunks.len());
     let mut pending_chunks = Vec::with_capacity(chunks.len());
+    let mut vad_estimated_segments = Vec::new();
     let total_chunks = chunks.len();
     let total_asr_work_ms = total_chunk_work_ms(&chunks);
     let vad_message = if skipped_silence_ms > 0 {
@@ -811,7 +813,7 @@ fn transcribe_with_context(
             processed_audio_ms: Some(0),
             total_speech_ms: Some(total_chunk_audio_ms),
             skipped_silence_ms: Some(skipped_silence_ms),
-            partial_transcript: None,
+            partial_segments: None,
         }),
     );
 
@@ -846,7 +848,7 @@ fn transcribe_with_context(
             before_eta_ms,
             "transcribingSegments",
             &format!("轉錄第 {chunk_index} / {total_chunks} 個有聲片段"),
-            build_partial_transcript(&transcript_parts),
+            Some(vad_estimated_segments.clone()),
         );
 
         let chunk_audio = write_chunk_audio(&normalized_samples, *chunk)?;
@@ -869,6 +871,11 @@ fn transcribe_with_context(
                 .unwrap_or(raw_result.language.as_str());
             let alignment_language = alignment_language(asr_language.as_deref(), detected_language);
             transcript_parts.push(chunk_text.clone());
+            vad_estimated_segments.extend(build_approximate_segments_with_offset(
+                &chunk_text,
+                chunk.duration_ms(),
+                chunk.start_ms(),
+            ));
             pending_chunks.push(PendingChunk {
                 chunk_index,
                 range: *chunk,
@@ -905,7 +912,7 @@ fn transcribe_with_context(
             after_eta_ms,
             "transcribingSegments",
             &format!("完成第 {chunk_index} / {total_chunks} 個有聲片段"),
-            build_partial_transcript(&transcript_parts),
+            Some(vad_estimated_segments.clone()),
         );
     }
 
@@ -920,6 +927,7 @@ fn transcribe_with_context(
         total_speech_ms: total_chunk_audio_ms,
         skipped_silence_ms,
         transcript_parts,
+        vad_estimated_segments,
         chunks: pending_chunks,
         duration_ms: started.elapsed().as_millis(),
     })
@@ -932,7 +940,7 @@ fn finalize_transcription_with_context(
     pending: PendingTranscription,
 ) -> AppResult<TranscriptionResult> {
     let alignment_started = Instant::now();
-    let partial_transcript = build_partial_transcript(&pending.transcript_parts);
+    let vad_estimated_segments = pending.vad_estimated_segments.clone();
     let output_language = normalize_output_language(pending.options.language.as_deref());
     let total_alignment_ms = pending
         .chunks
@@ -973,7 +981,7 @@ fn finalize_transcription_with_context(
                     "對齊第 {} / {} 個片段的時間戳",
                     chunk.chunk_index, pending.total_chunks
                 ),
-                partial_transcript.clone(),
+                Some(vad_estimated_segments.clone()),
             );
             let chunk_audio_path = chunk.audio.inference_path().to_str().ok_or_else(|| {
                 AppError::Transcription("Chunk audio path contains unsupported characters.".into())
@@ -1036,7 +1044,7 @@ fn finalize_transcription_with_context(
             processed_audio_ms: Some(pending.total_speech_ms),
             total_speech_ms: Some(pending.total_speech_ms),
             skipped_silence_ms: Some(pending.skipped_silence_ms),
-            partial_transcript: partial_transcript.clone(),
+            partial_segments: Some(vad_estimated_segments),
         }),
     );
 
@@ -1068,21 +1076,6 @@ fn total_chunk_work_ms(chunks: &[AudioRange]) -> u64 {
 
 fn chunk_work_ms(chunk: AudioRange) -> u64 {
     chunk.duration_ms().saturating_add(ASR_CHUNK_OVERHEAD_MS)
-}
-
-fn build_partial_transcript(parts: &[String]) -> Option<String> {
-    let text = parts
-        .iter()
-        .map(|part| part.trim())
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
-    }
 }
 
 fn write_chunk_audio(samples: &[i16], chunk: AudioRange) -> AppResult<audio::PreparedAudio> {
@@ -1525,17 +1518,6 @@ mod tests {
     }
 
     #[test]
-    fn builds_partial_transcript_from_completed_chunks() {
-        let parts = vec!["第一段".to_string(), " ".to_string(), "第二段".to_string()];
-
-        assert_eq!(
-            build_partial_transcript(&parts),
-            Some("第一段\n第二段".to_string())
-        );
-        assert_eq!(build_partial_transcript(&[]), None);
-    }
-
-    #[test]
     fn estimates_eta_from_observed_asr_work() {
         assert_eq!(
             estimate_remaining_ms_from_elapsed(10_000, 25_000, 100_000),
@@ -1704,6 +1686,21 @@ mod tests {
             .map(|segment| segment.text.as_str())
             .collect::<String>();
         assert_eq!(rebuilt, text);
+    }
+
+    #[test]
+    fn approximate_segments_keep_vad_chunk_offsets() {
+        let mut segments = build_approximate_segments_with_offset("第一段。", 1_000, 0);
+        segments.extend(build_approximate_segments_with_offset(
+            "第二段。",
+            1_500,
+            2_500,
+        ));
+
+        assert_eq!(segments.first().map(|segment| segment.start_ms), Some(0));
+        assert_eq!(segments.first().map(|segment| segment.end_ms), Some(1_000));
+        assert_eq!(segments.last().map(|segment| segment.start_ms), Some(2_500));
+        assert_eq!(segments.last().map(|segment| segment.end_ms), Some(4_000));
     }
 
     #[test]

@@ -10,7 +10,11 @@ import {
 } from "@tauri-apps/plugin-notification";
 import { toast } from "sonner";
 
-import { audioFilters, defaultOptions } from "@/lib/app-constants";
+import {
+  audioFilters,
+  defaultOptions,
+  languageItems,
+} from "@/lib/app-constants";
 import { basename, formatInvokeError, uniquePaths } from "@/lib/format";
 import type {
   DownloadProgress,
@@ -24,6 +28,7 @@ import type {
 } from "@/types/transcription";
 
 const selectedModelStorageKey = "qwenasr:selected-model-id";
+const transcriptionOptionsStorageKey = "qwenasr:transcription-options";
 const forcedAlignerModelId = "qwen3-forced-aligner-0.6b";
 const forcedAlignmentLanguages = new Set([
   "chinese",
@@ -72,6 +77,44 @@ function writeStoredSelectedModelId(modelId: string) {
     window.localStorage.setItem(selectedModelStorageKey, modelId);
   } catch {
     // Ignore storage failures so model selection still works in restricted webviews.
+  }
+}
+
+function readStoredTranscriptionOptions(): OptionsState {
+  try {
+    const raw = window.localStorage.getItem(transcriptionOptionsStorageKey);
+    if (!raw) return { ...defaultOptions };
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ...defaultOptions };
+    }
+
+    const stored = parsed as Record<string, unknown>;
+    const language =
+      typeof stored.language === "string" &&
+      languageItems.some((item) => item.value === stored.language)
+        ? stored.language
+        : defaultOptions.language;
+    const writeSrt =
+      typeof stored.writeSrt === "boolean"
+        ? stored.writeSrt
+        : defaultOptions.writeSrt;
+
+    return { language, writeSrt };
+  } catch {
+    return { ...defaultOptions };
+  }
+}
+
+function writeStoredTranscriptionOptions(options: OptionsState) {
+  try {
+    window.localStorage.setItem(
+      transcriptionOptionsStorageKey,
+      JSON.stringify(options),
+    );
+  } catch {
+    // Ignore storage failures so task creation still works in restricted webviews.
   }
 }
 
@@ -215,13 +258,15 @@ export function useTranscriptionWorkspace() {
     readStoredSelectedModelId,
   );
   const [outputDir, setOutputDir] = useState("");
-  const [options, setOptions] = useState<OptionsState>(defaultOptions);
-  const [taskDraft, setTaskDraft] = useState<TaskDraft>({
+  const [options, setOptions] = useState<OptionsState>(
+    readStoredTranscriptionOptions,
+  );
+  const [taskDraft, setTaskDraft] = useState<TaskDraft>(() => ({
     files: [],
     modelId: "",
     outputDir: "",
-    options: defaultOptions,
-  });
+    options: readStoredTranscriptionOptions(),
+  }));
   const [isTaskDialogOpen, setTaskDialogOpen] = useState(false);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [tasks, setTasks] = useState<TranscriptionTask[]>([]);
@@ -663,6 +708,7 @@ export function useTranscriptionWorkspace() {
       setTasks((current) => [...current, ...nextTasks]);
       setSelectedModelId(readyModel.id);
       setOptions(taskDraft.options);
+      writeStoredTranscriptionOptions(taskDraft.options);
       setOutputDir(taskDraft.outputDir);
       setTaskDialogOpen(false);
       setTaskModelDownloadDialogOpen(false);

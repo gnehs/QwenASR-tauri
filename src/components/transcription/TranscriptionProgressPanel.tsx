@@ -1,29 +1,41 @@
-import { ClockIcon } from "lucide-react";
-
 import { Progress } from "@/components/ui/progress";
 import { formatDuration } from "@/lib/format";
 import type { TranscriptionProgress } from "@/types/transcription";
 
+const stages = ["準備", "分析", "轉錄", "整理"] as const;
+
 const phaseLabels: Record<string, string> = {
-  preparing: "準備中",
+  preparing: "準備處理音訊",
   loadingModel: "載入模型",
   loadingAudio: "讀取音訊",
-  analyzingAudio: "分析音訊",
-  transcribing: "模型推論",
+  analyzingAudio: "分析語音片段",
+  transcribing: "執行語音辨識",
   transcribingSegments: "逐段轉錄",
-  aligningTimestamps: "精準時間對齊",
-  writingSrt: "輸出字幕",
-  finalizing: "整理結果",
-  complete: "完成",
-  error: "失敗",
+  aligningTimestamps: "校準時間軸",
+  writingSrt: "寫入字幕檔",
+  finalizing: "整理轉錄結果",
+  complete: "轉錄完成",
+  error: "轉錄失敗",
 };
 
-const etaPendingLabels: Record<string, string> = {
-  preparing: "ETA 待推論",
-  loadingModel: "ETA 待推論",
-  loadingAudio: "ETA 待推論",
-  analyzingAudio: "ETA 待推論",
-};
+function activeStageIndex(progress: TranscriptionProgress) {
+  switch (progress.phase) {
+    case "analyzingAudio":
+      return 1;
+    case "transcribing":
+    case "transcribingSegments":
+      return 2;
+    case "aligningTimestamps":
+    case "writingSrt":
+    case "finalizing":
+    case "complete":
+      return 3;
+    case "loadingModel":
+      return progress.processedAudioMs != null ? 3 : 0;
+    default:
+      return 0;
+  }
+}
 
 export function TranscriptionProgressPanel({
   now,
@@ -37,34 +49,6 @@ export function TranscriptionProgressPanel({
   if (!progress) return null;
 
   const percent = Math.max(0, Math.min(100, progress.percent));
-  const phaseLabel = phaseLabels[progress.phase] ?? progress.phase;
-  const chunkProgress =
-    progress.totalChunks && progress.chunkIndex !== null
-      ? `片段 ${Math.min(progress.chunkIndex, progress.totalChunks)} / ${
-          progress.totalChunks
-        }`
-      : null;
-  const processedSpeech =
-    progress.processedAudioMs !== null && progress.totalSpeechMs !== null
-      ? `有聲 ${formatDuration(progress.processedAudioMs)} / ${formatDuration(
-          progress.totalSpeechMs,
-        )}`
-      : null;
-  const skippedSilence =
-    progress.skippedSilenceMs !== null && progress.skippedSilenceMs > 0
-      ? `已跳過靜音 ${formatDuration(progress.skippedSilenceMs)}`
-      : null;
-  const chunkRange =
-    progress.chunkStartMs !== null && progress.chunkEndMs !== null
-      ? `${formatDuration(progress.chunkStartMs)}-${formatDuration(
-          progress.chunkEndMs,
-        )}`
-      : null;
-  const fileProgress =
-    progress.totalFiles > 1 && progress.fileIndex > 0
-      ? `第 ${progress.fileIndex} / ${progress.totalFiles} 個檔案`
-      : phaseLabel;
-  const detailLine = [fileProgress, chunkProgress].filter(Boolean).join(" · ");
   const elapsedSinceProgress =
     now != null && progressUpdatedAt != null
       ? Math.max(0, now - progressUpdatedAt)
@@ -75,42 +59,74 @@ export function TranscriptionProgressPanel({
       ? null
       : Math.max(0, progress.etaMs - elapsedSinceProgress);
   const etaLabel =
-    etaMs == null
-      ? (etaPendingLabels[progress.phase] ?? "ETA 估算中")
-      : `ETA ${formatDuration(etaMs)}`;
+    etaMs == null ? "估算中" : formatDuration(etaMs);
+  const activeStage = activeStageIndex(progress);
+  const currentMessage =
+    progress.message?.trim() || phaseLabels[progress.phase] || "轉錄中";
+  const processedSpeech =
+    progress.processedAudioMs != null && progress.totalSpeechMs != null
+      ? `${formatDuration(progress.processedAudioMs)} / ${formatDuration(
+          progress.totalSpeechMs,
+        )}`
+      : null;
 
   return (
-    <div className="transcription-progress">
+    <section className="transcription-progress" aria-label="轉錄進度摘要">
       <div className="transcription-progress-head">
         <div className="min-w-0">
-          <div className="truncate text-sm font-medium">
-            {progress.message || "轉錄中"}
+          <div className="text-xs text-muted-foreground">
+            目前進度
           </div>
-          <div className="truncate text-xs text-muted-foreground">
-            {detailLine}
+          <div className="truncate text-sm font-medium" title={currentMessage}>
+            {currentMessage}
           </div>
         </div>
         <div className="transcription-progress-stat">
-          <span className="text-sm font-medium tabular-nums">
+          <strong className="text-2xl font-medium tabular-nums">
             {percent.toFixed(0)}%
+          </strong>
+          <span className="text-xs text-muted-foreground">
+            剩餘 {etaLabel}
           </span>
-          <span className="text-xs text-muted-foreground">{etaLabel}</span>
         </div>
       </div>
-      <Progress value={percent} aria-label="轉錄進度" />
-      {processedSpeech || skippedSilence || chunkRange ? (
-        <div className="transcription-progress-metrics">
-          {processedSpeech ? <span>{processedSpeech}</span> : null}
-          {skippedSilence ? <span>{skippedSilence}</span> : null}
-          {chunkRange ? <span>目前 {chunkRange}</span> : null}
-        </div>
-      ) : null}
+
+      <Progress
+        aria-label={`轉錄進度 ${percent.toFixed(0)}%`}
+        className="transcription-progress-bar"
+        value={percent}
+      />
+
+      <div
+        className="transcription-stage-list"
+        aria-label="處理階段"
+        role="list"
+      >
+        {stages.map((stage, index) => (
+          <div
+            aria-current={index === activeStage ? "step" : undefined}
+            className={
+              index < activeStage
+                ? "is-complete"
+                : index === activeStage
+                  ? "is-active"
+                  : undefined
+            }
+            key={stage}
+            role="listitem"
+          >
+            <span className="transcription-stage-dot" aria-hidden="true" />
+            <span>{stage}</span>
+          </div>
+        ))}
+      </div>
+
       <div className="transcription-progress-foot">
-        <span className="inline-flex min-w-0 items-center gap-1 truncate">
-          <ClockIcon className="size-3.5 shrink-0" />
-          已用 {formatDuration(elapsedMs)}
+        <span>已用 {formatDuration(elapsedMs)}</span>
+        <span className="truncate" title={processedSpeech ?? undefined}>
+          {processedSpeech ? `已處理 ${processedSpeech}` : "正在估算語音量"}
         </span>
       </div>
-    </div>
+    </section>
   );
 }

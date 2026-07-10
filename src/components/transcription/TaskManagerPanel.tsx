@@ -352,13 +352,27 @@ export function TaskManagerPanel({
           if (!open) setSelectedTaskId(null);
         }}
       >
-        <SheetContent side="right" className="task-detail-drawer">
-          <SheetHeader>
-            <SheetTitle>任務詳情</SheetTitle>
-            <SheetDescription>
+        <SheetContent
+          side="right"
+          className="gap-0 data-[side=right]:w-[min(720px,100vw)] data-[side=right]:sm:max-w-[min(720px,100vw)]"
+        >
+          <SheetHeader className="pr-12">
+            <div className="flex items-center gap-2">
+              <SheetTitle>任務詳情</SheetTitle>
+              {selectedTask ? (
+                <Badge variant={statusMeta[selectedTask.status].badge}>
+                  {statusMeta[selectedTask.status].label}
+                </Badge>
+              ) : null}
+            </div>
+            <SheetDescription
+              className="truncate"
+              title={selectedTask ? basename(selectedTask.audioPath) : undefined}
+            >
               {selectedTask ? basename(selectedTask.audioPath) : "尚未選取任務"}
             </SheetDescription>
           </SheetHeader>
+          <Separator />
           <div className="task-detail-content">
             {selectedTask ? (
               <TaskDetail now={etaTick} task={selectedTask} />
@@ -617,31 +631,62 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
   }
 
   if (task.status === "running") {
-    const partialTranscript = progress?.partialTranscript?.trim() ?? "";
+    const partialSegments = progress?.partialSegments ?? [];
 
     return (
-      <ScrollArea className="task-running-scroll">
-        <div className="task-running-detail">
-          <TranscriptionProgressPanel
-            now={now}
-            progress={progress}
-            progressUpdatedAt={task.progressUpdatedAt}
-          />
-          {partialTranscript ? (
-            <div className="task-partial-result">
-              <div className="task-partial-result-head">
-                <div className="text-sm font-medium">途中結果</div>
-                <Badge variant="outline">自動更新</Badge>
+      <div className="task-running-detail">
+        <TranscriptionProgressPanel
+          now={now}
+          progress={progress}
+          progressUpdatedAt={task.progressUpdatedAt}
+        />
+        <Separator />
+        <section
+          className="task-partial-result"
+          aria-labelledby="live-transcript-title"
+        >
+          <div className="task-partial-result-head">
+            <div className="min-w-0">
+              <div id="live-transcript-title" className="text-sm font-medium">
+                即時逐字稿
               </div>
-              <Textarea
-                readOnly
-                value={partialTranscript}
-                className="task-partial-result-text resize-none"
-              />
+              <p className="text-xs text-muted-foreground">
+                時間為 VAD 推估，內容會隨轉錄進度更新。
+              </p>
             </div>
-          ) : null}
-        </div>
-      </ScrollArea>
+            <Badge variant="outline">{partialSegments.length} 段</Badge>
+          </div>
+          {partialSegments.length > 0 ? (
+            <ScrollArea className="task-partial-scroll">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-40">時間</TableHead>
+                    <TableHead>文字</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {partialSegments.map((segment, index) => (
+                    <TableRow key={`${segment.startMs}-${index}`}>
+                      <TableCell className="whitespace-nowrap align-top font-mono text-xs text-muted-foreground">
+                        {formatTimestamp(segment.startMs)} -{" "}
+                        {formatTimestamp(segment.endMs)}
+                      </TableCell>
+                      <TableCell className="srt-preview-text align-top">
+                        {segment.text}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          ) : (
+            <div className="task-partial-empty text-sm text-muted-foreground">
+              辨識到語音後，逐字稿會顯示在這裡。
+            </div>
+          )}
+        </section>
+      </div>
     );
   }
 
@@ -652,7 +697,9 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
       <div className="task-result-stack">
         <div className="task-result-meta">
           <div>
-            <div className="text-sm font-medium">{basename(result.audioPath)}</div>
+            <div className="break-words text-sm font-medium">
+              {basename(result.audioPath)}
+            </div>
             <div className="truncate text-sm text-muted-foreground">
               {result.srtPath ? `SRT: ${result.srtPath}` : "未輸出 SRT"}
             </div>
@@ -673,7 +720,7 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
             {result.segments.map((segment, index) => (
               <TableRow key={`${segment.startMs}-${index}`}>
                 <TableCell className="whitespace-nowrap text-muted-foreground">
-                  {formatTimestamp(segment.startMs)}
+                  {formatTimestamp(segment.startMs)} - {formatTimestamp(segment.endMs)}
                 </TableCell>
                 <TableCell className="srt-preview-text">{segment.text}</TableCell>
               </TableRow>

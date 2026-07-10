@@ -62,7 +62,7 @@ export type TranscriptionProgress = {
   processedAudioMs: number | null;
   totalSpeechMs: number | null;
   skippedSilenceMs: number | null;
-  partialTranscript: string | null;
+  partialSegments: TranscriptSegment[] | null;
 };
 
 export type OptionsState = {
