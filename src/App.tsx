@@ -1,4 +1,9 @@
-import { FileUpIcon, ListPlusIcon, Settings2Icon } from "lucide-react";
+import {
+  FileUpIcon,
+  ListPlusIcon,
+  Settings2Icon,
+  Trash2Icon,
+} from "lucide-react";
 import { Toaster } from "sonner";
 
 import { AppToolbar } from "@/components/app/AppToolbar";
@@ -54,7 +59,8 @@ function App() {
                     size="sm"
                     onClick={workspace.clearFinishedTasks}
                   >
-                    清除已結束
+                    <Trash2Icon data-icon="inline-start" />
+                    清除已完成
                   </Button>
                 ) : null}
                 <Button size="sm" onClick={workspace.pickFilesForTasks}>
