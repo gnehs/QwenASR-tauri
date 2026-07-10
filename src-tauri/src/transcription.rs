@@ -23,7 +23,6 @@ use crate::vad::{self, AudioRange};
 
 const TRANSCRIPTION_PROGRESS_EVENT: &str = "transcription-progress";
 const TARGET_SRT_CHARS: usize = 42;
-const MAX_SRT_CHARS: usize = 72;
 const MIN_SEGMENT_MS: u64 = 900;
 const CHINESE_ASR_LANGUAGE: &str = "Chinese";
 const TRADITIONAL_CHINESE_LANGUAGE: &str = "chinese";
@@ -1412,11 +1411,9 @@ fn split_transcript_units(text: &str) -> Vec<String> {
         current.push(character);
         current_chars += 1;
 
-        let should_split = is_hard_boundary(character)
+        if is_hard_boundary(character)
             || (is_soft_boundary(character) && current_chars >= TARGET_SRT_CHARS)
-            || current_chars >= MAX_SRT_CHARS;
-
-        if should_split {
+        {
             push_segment_unit(&mut units, &mut current, &mut current_chars);
         }
     }
@@ -1461,7 +1458,7 @@ fn is_hard_boundary(character: char) -> bool {
 }
 
 fn is_soft_boundary(character: char) -> bool {
-    matches!(character, ',' | '、' | '：' | ':')
+    matches!(character, ',' | '.' | '、' | '：' | ':')
 }
 
 fn weighted_char_count(text: &str) -> usize {
@@ -1664,6 +1661,68 @@ mod tests {
                 "還有資產配置。",
                 "最後看實際案例。"
             ]
+        );
+    }
+
+    #[test]
+    fn splits_english_only_at_punctuation_boundaries() {
+        let text = "Interview Mr. Swallows. Give Mr. Swallows your full attention. Whatever Mr. Swallows says is good, and you're going to go along with it.";
+        let units = split_transcript_units(text);
+
+        assert!(units.len() > 1);
+        assert!(units
+            .iter()
+            .take(units.len() - 1)
+            .all(|unit| unit.chars().last().is_some_and(
+                |character| is_hard_boundary(character) || is_soft_boundary(character)
+            )));
+        assert_eq!(
+            units
+                .iter()
+                .flat_map(|unit| tokenize_alignment_units(unit, "English"))
+                .collect::<Vec<_>>(),
+            tokenize_alignment_units(text, "English")
+        );
+    }
+
+    #[test]
+    fn keeps_long_unpunctuated_text_in_one_unit() {
+        let text = "This deliberately long transcript has no punctuation and must remain a single subtitle unit even after passing the former seventy two character limit";
+
+        assert_eq!(split_transcript_units(text), vec![text]);
+    }
+
+    #[test]
+    fn preserves_complete_words_for_forced_alignment() {
+        let text = "No, I completely understand. I've been trying to get this interview for nearly six months now, so I'm gonna make sure I use this one hour to the full. Make sure you only film Mr. Swallow's left side, not his right.";
+        let text_units = tokenize_alignment_units(text, "English");
+        let aligned = text_units
+            .iter()
+            .enumerate()
+            .map(|(index, word)| AlignedUnit {
+                text: word.clone(),
+                start_ms: index as u64 * 100,
+                end_ms: index as u64 * 100 + 80,
+            })
+            .collect::<Vec<_>>();
+
+        let segments = build_aligned_segments_with_offset(
+            text,
+            &aligned,
+            "English",
+            Some("English"),
+            0,
+            aligned.len() as u64 * 100,
+        )
+        .unwrap()
+        .expect("punctuation-based splitting should preserve alignment units");
+
+        assert_eq!(
+            segments
+                .iter()
+                .flat_map(|segment| tokenize_alignment_units(&segment.text, "English"))
+                .collect::<Vec<_>>(),
+            text_units
         );
     }
 
