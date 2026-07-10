@@ -4,6 +4,8 @@
 }
 
 .app-window {
+  --app-content-padding-inline: 18px;
+
   display: flex;
   height: 100vh;
   min-height: 0;
@@ -79,7 +81,7 @@
   align-items: center;
   gap: 12px;
   border-bottom: 1px solid var(--border);
-  padding: 0 18px;
+  padding: 0 var(--app-content-padding-inline);
   background: color-mix(in oklch, var(--background), var(--muted) 50%);
 }
 
@@ -270,6 +272,14 @@
   flex: 1;
 }
 
+.task-table :is(th, td):first-child {
+  padding-left: var(--app-content-padding-inline);
+}
+
+.task-table :is(th, td):last-child {
+  padding-right: var(--app-content-padding-inline);
+}
+
 .task-table-wrap [data-slot="empty"] {
   min-height: 360px;
 }
@@ -414,14 +424,12 @@
   min-height: 0;
   flex: 1;
   overflow: auto;
-  border-block: 1px solid var(--border);
 }
 
 .task-partial-empty {
   display: grid;
   min-height: 140px;
   place-items: center;
-  border-block: 1px solid var(--border);
   text-align: center;
 }
 
@@ -645,6 +653,7 @@
   flex-direction: column;
   align-items: stretch;
   gap: 12px;
+  padding-block: 8px;
 }
 
 .model-card-footer-row {
@@ -778,7 +787,6 @@
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
-  border-block: 1px solid var(--border);
   padding-block: 9px;
 }
 
@@ -862,10 +870,14 @@
 }
 
 @media (max-width: 720px) {
+  .app-window {
+    --app-content-padding-inline: 12px;
+  }
+
   .window-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    padding: 12px;
+    padding: 12px var(--app-content-padding-inline);
   }
 
   .window-toolbar-actions {

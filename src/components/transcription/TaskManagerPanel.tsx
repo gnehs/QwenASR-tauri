@@ -225,7 +225,7 @@ export function TaskManagerPanel({
               className={cn("task-table-wrap", tasks.length === 0 && "is-empty")}
             >
               {tasks.length > 0 ? (
-                <Table>
+                <Table className="task-table">
                   <TableHeader>
                     <TableRow>
                       <TableHead>檔案</TableHead>
