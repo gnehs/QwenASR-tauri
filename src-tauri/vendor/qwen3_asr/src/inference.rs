@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use std::path::Path;
+use std::time::Instant;
 use crate::tensor::{Device, Tensor};
 
 use crate::audio;
@@ -18,6 +19,18 @@ const MEL_SAMPLE_RATE: u32 = 16000;
 // this limit aligned with the precomputed RoPE table also prevents a missing
 // EOS token from reading an empty position slice and terminating MLX.
 const MAX_NEW_TOKENS: usize = 512;
+
+#[derive(Debug, Clone, Default)]
+pub struct InferenceTimings {
+    pub mel_ms: u128,
+    pub audio_encoder_ms: u128,
+    pub prompt_ms: u128,
+    pub prefill_ms: u128,
+    pub decode_ms: u128,
+    pub postprocess_ms: u128,
+    pub total_ms: u128,
+    pub generated_tokens: usize,
+}
 
 /// ASR inference engine.
 pub struct AsrInference {
@@ -91,23 +104,41 @@ impl AsrInference {
 
     /// Transcribe an audio file.
     pub fn transcribe(&self, audio_path: &str, language: Option<&str>) -> Result<TranscribeResult> {
-        // Step 1: Load and preprocess audio
         tracing::info!("Loading audio from {}", audio_path);
         let samples = audio::load_audio(audio_path, MEL_SAMPLE_RATE)?;
+
+        self.transcribe_samples(&samples, language)
+    }
+
+    /// Transcribe decoded mono audio samples at 16 kHz.
+    pub fn transcribe_samples(
+        &self,
+        samples: &[f32],
+        language: Option<&str>,
+    ) -> Result<TranscribeResult> {
+        let inference_started = Instant::now();
+        let mut timings = InferenceTimings::default();
+
+        // Step 1: Preprocess audio
         let duration_seconds = samples.len() as f64 / MEL_SAMPLE_RATE as f64;
 
         // Step 2: Compute mel spectrogram
-        let mel = self.mel_extractor.extract(&samples, self.device)?;
+        let mel_started = Instant::now();
+        let mel = self.mel_extractor.extract(samples, self.device)?;
+        timings.mel_ms = mel_started.elapsed().as_millis();
         let num_mel_frames = mel.size()[1] as usize;
         tracing::info!("Mel spectrogram: {} frames", num_mel_frames);
 
         // Step 3: Run audio encoder
+        let audio_encoder_started = Instant::now();
         let audio_embeds = self.audio_encoder.forward(&mel);
         audio_embeds.eval(); // Materialize encoder output before decode phase
+        timings.audio_encoder_ms = audio_encoder_started.elapsed().as_millis();
         let num_audio_tokens = audio_embeds.size()[0] as usize;
         tracing::info!("Audio encoder: {} tokens", num_audio_tokens);
 
         // Step 4: Build input token sequence
+        let prompt_started = Instant::now();
         let (input_ids, audio_positions) =
             self.build_prompt(num_audio_tokens, language)?;
         let seq_len = input_ids.len();
@@ -128,8 +159,10 @@ impl AsrInference {
                 1,
             );
         }
+        timings.prompt_ms = prompt_started.elapsed().as_millis();
 
         // Step 6: Precompute MRoPE cos/sin for all positions (prefill + max decode)
+        let prefill_started = Instant::now();
         let text_config = &self.config.thinker_config.text_config;
         // The decode loop and position table must share the same budget.
         let max_total_positions = seq_len + MAX_NEW_TOKENS;
@@ -165,19 +198,21 @@ impl AsrInference {
         );
         // Eval prefill output to materialize computation graph before decode loop
         logits.eval();
+        timings.prefill_ms = prefill_started.elapsed().as_millis();
 
         // Step 8: Autoregressive generation
-        let mut generated_ids: Vec<i64> = Vec::new();
-        let eos_token_ids = vec![ENDOFTEXT_TOKEN_ID, IM_END_TOKEN_ID];
+        let decode_started = Instant::now();
+        let mut generated_ids: Vec<i64> = Vec::with_capacity(MAX_NEW_TOKENS);
+        let eos_token_ids = [ENDOFTEXT_TOKEN_ID, IM_END_TOKEN_ID];
 
         let mut next_logits = logits.narrow(1, seq_len as i64 - 1, 1).squeeze_dim(1);
 
         let mut current_pos = seq_len;
-
         // Derive the loop bound from the actual table capacity so future
         // budget changes cannot make decode positions diverge again.
         for _ in seq_len..max_total_positions {
-            let next_token = next_logits.argmax(-1, false).int64_value(&[0]);
+            let next_token_tensor = next_logits.argmax(-1, false);
+            let next_token = next_token_tensor.int64_value(&[0]);
 
             if eos_token_ids.contains(&next_token) {
                 break;
@@ -185,8 +220,7 @@ impl AsrInference {
 
             generated_ids.push(next_token);
 
-            let next_input = Tensor::from_slice_i64(&[next_token]).to_device(self.device);
-            let next_hidden = self.text_decoder.embed(&next_input).unsqueeze(0);
+            let next_hidden = self.text_decoder.embed(&next_token_tensor).unsqueeze(0);
 
             // Index into precomputed cos/sin for this position
             let new_cos = all_cos.narrow(0, current_pos as i64, 1);
@@ -204,18 +238,24 @@ impl AsrInference {
 
             current_pos += 1;
         }
+        timings.decode_ms = decode_started.elapsed().as_millis();
 
         // Step 9: Parse output
         tracing::info!("Generated {} tokens", generated_ids.len());
+        let postprocess_started = Instant::now();
         let raw_text = self.tokenizer.decode(&generated_ids)?;
         tracing::debug!("Raw output: {:?}", raw_text);
         let (language_detected, transcription) = parse_asr_output(&raw_text, language.is_some());
+        timings.postprocess_ms = postprocess_started.elapsed().as_millis();
+        timings.generated_tokens = generated_ids.len();
+        timings.total_ms = inference_started.elapsed().as_millis();
 
         Ok(TranscribeResult {
             text: transcription,
             language: language_detected,
             raw_output: raw_text,
             duration_seconds,
+            timings,
         })
     }
 
@@ -271,6 +311,7 @@ pub struct TranscribeResult {
     pub language: String,
     pub raw_output: String,
     pub duration_seconds: f64,
+    pub timings: InferenceTimings,
 }
 
 fn parse_asr_output(raw: &str, language_forced: bool) -> (String, String) {

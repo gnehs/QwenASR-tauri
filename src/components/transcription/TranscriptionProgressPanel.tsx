@@ -1,5 +1,5 @@
 import { Progress } from "@/components/ui/progress";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, formatTiming } from "@/lib/format";
 import type { TranscriptionProgress } from "@/types/transcription";
 
 const stages = ["準備", "分析", "轉錄", "整理"] as const;
@@ -69,6 +69,13 @@ export function TranscriptionProgressPanel({
           progress.totalSpeechMs,
         )}`
       : null;
+  const timings = progress.timings;
+  const otherStagesMs = timings
+    ? timings.audioPrepareMs +
+      timings.vadMs +
+      timings.alignmentMs +
+      timings.finalizeMs
+    : null;
 
   return (
     <section className="transcription-progress" aria-label="轉錄進度摘要">
@@ -127,6 +134,19 @@ export function TranscriptionProgressPanel({
           {processedSpeech ? `已處理 ${processedSpeech}` : "正在估算語音量"}
         </span>
       </div>
+
+      {timings ? (
+        <div
+          className="flex flex-wrap gap-x-3 gap-y-1 border-t pt-2 text-xs tabular-nums text-muted-foreground"
+          aria-label="處理計時"
+        >
+          <span className="font-medium text-foreground">計時</span>
+          <span>ASR {formatTiming(timings.asrMs)}</span>
+          <span>decode {formatTiming(timings.asrDecodeMs)}</span>
+          <span>encoder {formatTiming(timings.asrEncoderMs)}</span>
+          <span>其他 {formatTiming(otherStagesMs)}</span>
+        </div>
+      ) : null}
     </section>
   );
 }

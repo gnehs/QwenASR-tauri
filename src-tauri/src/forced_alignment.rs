@@ -104,9 +104,26 @@ impl ForcedAlignerInference {
         })
     }
 
+    #[allow(dead_code)]
     pub fn align(
         &self,
         audio_path: &str,
+        text: &str,
+        language: &str,
+    ) -> AppResult<Vec<AlignedUnit>> {
+        let samples = audio::load_audio(audio_path, SAMPLE_RATE).map_err(|error| {
+            AppError::Transcription(format!(
+                "Failed to load audio for forced alignment: {error}"
+            ))
+        })?;
+
+        self.align_samples(&samples, text, language)
+    }
+
+    /// Align text against decoded mono audio samples at 16 kHz.
+    pub fn align_samples(
+        &self,
+        samples: &[f32],
         text: &str,
         language: &str,
     ) -> AppResult<Vec<AlignedUnit>> {
@@ -115,14 +132,9 @@ impl ForcedAlignerInference {
             return Ok(Vec::new());
         }
 
-        let samples = audio::load_audio(audio_path, SAMPLE_RATE).map_err(|error| {
-            AppError::Transcription(format!(
-                "Failed to load audio for forced alignment: {error}"
-            ))
-        })?;
         let mel = self
             .mel_extractor
-            .extract(&samples, self.device)
+            .extract(samples, self.device)
             .map_err(|error| {
                 AppError::Transcription(format!(
                     "Failed to compute forced aligner audio features: {error}"

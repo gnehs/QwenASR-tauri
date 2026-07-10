@@ -142,6 +142,34 @@ pub fn slice(a: &MlxArray, start: &[i32], stop: &[i32], strides: &[i32]) -> MlxA
     res
 }
 
+pub fn slice_update(
+    src: &MlxArray,
+    update: &MlxArray,
+    start: &[i32],
+    stop: &[i32],
+    strides: &[i32],
+) -> MlxArray {
+    assert_eq!(start.len(), stop.len(), "slice bounds must have the same rank");
+    assert_eq!(start.len(), strides.len(), "slice strides must match bounds rank");
+
+    let mut res = MlxArray::empty();
+    unsafe {
+        ffi::mlx_slice_update(
+            &mut res.ptr,
+            src.ptr,
+            update.ptr,
+            start.as_ptr(),
+            start.len(),
+            stop.as_ptr(),
+            stop.len(),
+            strides.as_ptr(),
+            strides.len(),
+            default_stream(),
+        );
+    }
+    res
+}
+
 pub fn broadcast_to(a: &MlxArray, shape: &[i32]) -> MlxArray {
     let mut res = MlxArray::empty();
     unsafe {

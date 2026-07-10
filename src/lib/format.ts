@@ -51,6 +51,14 @@ export function formatDuration(ms: number | null | undefined) {
   return `${minutes} 分 ${seconds.toString().padStart(2, "0")} 秒`;
 }
 
+export function formatTiming(ms: number | null | undefined) {
+  if (!Number.isFinite(ms) || ms == null || ms < 0) return "--";
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+
+  const seconds = ms / 1000;
+  return `${seconds < 10 ? seconds.toFixed(2) : seconds.toFixed(1)} 秒`;
+}
+
 export function formatInvokeError(error: unknown) {
   if (typeof error === "string") return error;
 

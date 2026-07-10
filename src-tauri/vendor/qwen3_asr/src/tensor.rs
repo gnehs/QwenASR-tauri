@@ -828,29 +828,33 @@ impl Tensor {
     }
 
     /// Replaces self[..., start:end:step, ...] along dim with src.
-    pub fn slice_scatter(&self, src: &Tensor, dim: i64, start: i64, end: i64, _step: i64) -> Self {
-        let ndim = self.inner.ndim() as usize;
-        let dim = if dim < 0 { ndim as i64 + dim } else { dim } as usize;
-        let shape = self.inner.shape();
-        let dim_size = shape[dim] as i64;
+    pub fn slice_scatter(&self, src: &Tensor, dim: i64, start: i64, end: i64, step: i64) -> Self {
+        let rank = self.inner.ndim() as i64;
+        let dim = if dim < 0 { rank + dim } else { dim };
 
-        // Build: [before, src, after]
-        let mut parts: Vec<Tensor> = Vec::new();
+        assert!(rank > 0, "slice_scatter requires a tensor with at least one dimension");
+        assert!(
+            (0..rank).contains(&dim),
+            "slice_scatter dimension {dim} is out of range for rank {rank}"
+        );
+        assert!(step > 0, "slice_scatter step must be positive");
 
-        if start > 0 {
-            parts.push(self.narrow(dim as i64, 0, start));
-        }
-        parts.push(src.clone());
-        let after_start = end;
-        if after_start < dim_size {
-            parts.push(self.narrow(dim as i64, after_start, dim_size - after_start));
-        }
+        let mut starts = vec![0i32; rank as usize];
+        let mut stops = self.inner.shape();
+        let mut strides = vec![1i32; rank as usize];
+        let dim = dim as usize;
 
-        if parts.len() == 1 {
-            return parts.into_iter().next().unwrap();
-        }
+        starts[dim] = i32::try_from(start).expect("slice_scatter start must fit in an i32");
+        stops[dim] = i32::try_from(end).expect("slice_scatter end must fit in an i32");
+        strides[dim] = i32::try_from(step).expect("slice_scatter step must fit in an i32");
 
-        Tensor::cat(&parts, dim as i64)
+        Tensor::from_mlx(crate::backend::mlx::ops::slice_update(
+            &self.inner,
+            &src.inner,
+            &starts,
+            &stops,
+            &strides,
+        ))
     }
 
     /// In-place fill (MLX: returns new tensor with fill value).
@@ -1042,6 +1046,33 @@ impl Tensor {
     pub fn to_vec_f32(&self) -> Vec<f32> {
         let f32_arr = self.inner.astype(crate::backend::mlx::ffi::mlx_dtype::MLX_FLOAT32);
         f32_arr.to_vec_f32()
+    }
+}
+
+#[cfg(all(test, feature = "mlx"))]
+mod mlx_tests {
+    use super::Tensor;
+
+    #[test]
+    fn slice_scatter_updates_a_strided_negative_dimension() {
+        crate::backend::mlx::stream::init_mlx(false);
+
+        let base = Tensor::from_slice_f32(&(0..30).map(|v| v as f32).collect::<Vec<_>>())
+            .reshape(&[2, 5, 3]);
+        let update = Tensor::from_slice_f32(&(100..112).map(|v| v as f32).collect::<Vec<_>>())
+            .reshape(&[2, 2, 3]);
+
+        let result = base.slice_scatter(&update, -2, -4, -1, 2);
+
+        assert_eq!(result.size(), vec![2, 5, 3]);
+        assert_eq!(
+            result.to_vec_f32(),
+            vec![
+                0.0, 1.0, 2.0, 100.0, 101.0, 102.0, 6.0, 7.0, 8.0, 103.0, 104.0, 105.0,
+                12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 106.0, 107.0, 108.0, 21.0, 22.0, 23.0,
+                109.0, 110.0, 111.0, 27.0, 28.0, 29.0,
+            ]
+        );
     }
 }
 

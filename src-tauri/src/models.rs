@@ -159,12 +159,53 @@ pub struct TranscriptSegment {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct TranscriptionTimings {
+    pub audio_prepare_ms: u128,
+    pub vad_ms: u128,
+    pub asr_ms: u128,
+    pub asr_mel_ms: u128,
+    pub asr_encoder_ms: u128,
+    pub asr_prompt_ms: u128,
+    pub asr_prefill_ms: u128,
+    pub asr_decode_ms: u128,
+    pub asr_postprocess_ms: u128,
+    pub alignment_ms: u128,
+    pub finalize_ms: u128,
+    pub asr_chunk_count: usize,
+    pub asr_generated_tokens: usize,
+    pub total_ms: u128,
+}
+
+impl Default for TranscriptionTimings {
+    fn default() -> Self {
+        Self {
+            audio_prepare_ms: 0,
+            vad_ms: 0,
+            asr_ms: 0,
+            asr_mel_ms: 0,
+            asr_encoder_ms: 0,
+            asr_prompt_ms: 0,
+            asr_prefill_ms: 0,
+            asr_decode_ms: 0,
+            asr_postprocess_ms: 0,
+            alignment_ms: 0,
+            finalize_ms: 0,
+            asr_chunk_count: 0,
+            asr_generated_tokens: 0,
+            total_ms: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TranscriptionResult {
     pub audio_path: String,
     pub text: String,
     pub segments: Vec<TranscriptSegment>,
     pub srt_path: Option<String>,
     pub duration_ms: u128,
+    pub timings: TranscriptionTimings,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -188,6 +229,7 @@ pub struct TranscriptionProgress {
     pub total_speech_ms: Option<u64>,
     pub skipped_silence_ms: Option<u64>,
     pub partial_segments: Option<Vec<TranscriptSegment>>,
+    pub timings: Option<TranscriptionTimings>,
 }
 
 #[cfg(test)]

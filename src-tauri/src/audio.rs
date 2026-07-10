@@ -94,41 +94,6 @@ pub fn read_normalized_i16(path: &Path) -> AppResult<Vec<i16>> {
         })
 }
 
-pub fn write_temp_asr_wav(samples: &[i16]) -> AppResult<PreparedAudio> {
-    let output = normalized_audio_path().map_err(|error| {
-        AppError::Transcription(format!(
-            "Could not create a temporary chunk audio file: {error}"
-        ))
-    })?;
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: ASR_SAMPLE_RATE,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-    let mut writer = hound::WavWriter::create(&output, spec).map_err(|error| {
-        AppError::Transcription(format!("Could not create a chunk WAV file: {error}"))
-    })?;
-
-    let min_samples = MIN_ASR_SAMPLES as usize;
-    for sample in samples {
-        writer.write_sample(*sample).map_err(|error| {
-            AppError::Transcription(format!("Could not write chunk audio samples: {error}"))
-        })?;
-    }
-    for _ in samples.len()..min_samples {
-        writer.write_sample(0i16).map_err(|error| {
-            AppError::Transcription(format!("Could not pad chunk audio samples: {error}"))
-        })?;
-    }
-
-    writer.finalize().map_err(|error| {
-        AppError::Transcription(format!("Could not finalize chunk WAV: {error}"))
-    })?;
-
-    Ok(PreparedAudio::new(output))
-}
-
 pub fn samples_to_ms(samples: usize) -> u64 {
     ((samples as f64 / ASR_SAMPLE_RATE as f64) * 1000.0).round() as u64
 }
@@ -369,16 +334,6 @@ mod tests {
                 "/tmp/output.wav",
             ]
         );
-    }
-
-    #[test]
-    fn temporary_chunk_audio_is_removed_when_released() {
-        let prepared = write_temp_asr_wav(&[1, -1, 2, -2]).unwrap();
-        let path = prepared.inference_path().to_path_buf();
-
-        assert!(path.is_file());
-        drop(prepared);
-        assert!(!path.exists());
     }
 
     #[test]

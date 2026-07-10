@@ -75,6 +75,7 @@ impl Linear {
             None => out,
         }
     }
+
 }
 
 // ============================================================================
@@ -236,6 +237,97 @@ impl AudioEncoderLayer {
 // Text decoder attention (GQA with QK-norm and MRoPE)
 // ============================================================================
 
+const KV_CACHE_STEP: i64 = 256;
+
+pub struct LayerKvCache {
+    keys: Option<Tensor>,
+    values: Option<Tensor>,
+    offset: i64,
+}
+
+impl LayerKvCache {
+    pub fn new() -> Self {
+        Self {
+            keys: None,
+            values: None,
+            offset: 0,
+        }
+    }
+
+    pub fn seq_len(&self) -> i64 {
+        self.offset
+    }
+
+    fn update_and_fetch(&mut self, keys: Tensor, values: Tensor) -> (Tensor, Tensor) {
+        let new_tokens = keys.size()[2];
+        let previous = self.offset;
+        let required = previous.saturating_add(new_tokens);
+
+        if self
+            .keys
+            .as_ref()
+            .map_or(true, |cached| required > cached.size()[2])
+        {
+            self.grow(&keys, &values, required);
+        }
+
+        self.keys = Some(
+            self.keys
+                .as_ref()
+                .expect("KV key cache must be allocated")
+                .slice_scatter(&keys, 2, previous, required, 1),
+        );
+        self.values = Some(
+            self.values
+                .as_ref()
+                .expect("KV value cache must be allocated")
+                .slice_scatter(&values, 2, previous, required, 1),
+        );
+        self.offset = required;
+
+        let visible_keys = self
+            .keys
+            .as_ref()
+            .expect("KV key cache must exist")
+            .narrow(2, 0, required);
+        let visible_values = self
+            .values
+            .as_ref()
+            .expect("KV value cache must exist")
+            .narrow(2, 0, required);
+        (visible_keys, visible_values)
+    }
+
+    fn grow(&mut self, keys: &Tensor, values: &Tensor, required: i64) {
+        let capacity = ((required + KV_CACHE_STEP - 1) / KV_CACHE_STEP) * KV_CACHE_STEP;
+        let mut key_shape = keys.size();
+        let mut value_shape = values.size();
+        key_shape[2] = capacity;
+        value_shape[2] = capacity;
+
+        let mut expanded_keys = Tensor::zeros(&key_shape, keys.kind(), keys.device());
+        let mut expanded_values = Tensor::zeros(&value_shape, values.kind(), values.device());
+
+        if self.offset > 0 {
+            let cached_keys = self
+                .keys
+                .as_ref()
+                .expect("KV key cache must exist before growth")
+                .narrow(2, 0, self.offset);
+            let cached_values = self
+                .values
+                .as_ref()
+                .expect("KV value cache must exist before growth")
+                .narrow(2, 0, self.offset);
+            expanded_keys = expanded_keys.slice_scatter(&cached_keys, 2, 0, self.offset, 1);
+            expanded_values = expanded_values.slice_scatter(&cached_values, 2, 0, self.offset, 1);
+        }
+
+        self.keys = Some(expanded_keys);
+        self.values = Some(expanded_values);
+    }
+}
+
 pub struct TextAttention {
     pub q_proj: Linear,
     pub k_proj: Linear,
@@ -276,9 +368,9 @@ impl TextAttention {
         x: &Tensor,
         cos: &Tensor,
         sin: &Tensor,
-        kv_cache: Option<&(Tensor, Tensor)>,
+        kv_cache: &mut LayerKvCache,
         mask: Option<&Tensor>,
-    ) -> (Tensor, (Tensor, Tensor)) {
+    ) -> Tensor {
         let (bsz, seq_len, _) = x.size3();
         let nqh = self.num_q_heads as i64;
         let nkvh = self.num_kv_heads as i64;
@@ -297,16 +389,8 @@ impl TextAttention {
         let q = q.apply_rope(cos, sin);
         let k = k.apply_rope(cos, sin);
 
-        // Update KV cache
-        let (k, v) = if let Some((past_k, past_v)) = kv_cache {
-            let k = Tensor::cat(&[past_k.clone(), k], 2);
-            let v = Tensor::cat(&[past_v.clone(), v], 2);
-            (k, v)
-        } else {
-            (k, v)
-        };
-
-        let new_cache = (k.shallow_clone(), v.shallow_clone());
+        // Update the block-allocated KV cache and expose only initialized tokens.
+        let (k, v) = kv_cache.update_and_fetch(k, v);
 
         // Compute attention using fused SDPA (handles GQA natively)
         let scale = 1.0 / (hd as f64).sqrt();
@@ -316,7 +400,7 @@ impl TextAttention {
         let out = out.transpose(1, 2).reshape(&[bsz, seq_len, nqh * hd]);
         let out = self.o_proj.forward(&out);
 
-        (out, new_cache)
+        out
     }
 
     fn apply_head_norm(&self, x: &Tensor, norm: &RmsNorm) -> Tensor {
@@ -394,13 +478,13 @@ impl TextDecoderLayer {
         x: &Tensor,
         cos: &Tensor,
         sin: &Tensor,
-        kv_cache: Option<&(Tensor, Tensor)>,
+        kv_cache: &mut LayerKvCache,
         mask: Option<&Tensor>,
-    ) -> (Tensor, (Tensor, Tensor)) {
+    ) -> Tensor {
         // Pre-norm + self-attention + residual
         let residual = x;
         let h = self.input_layernorm.forward(x);
-        let (h, new_cache) = self.self_attn.forward(&h, cos, sin, kv_cache, mask);
+        let h = self.self_attn.forward(&h, cos, sin, kv_cache, mask);
         let x = &h + residual;
 
         // Pre-norm + MLP + residual
@@ -409,7 +493,7 @@ impl TextDecoderLayer {
         let h = self.mlp.forward(&h);
         let out = h + residual;
 
-        (out, new_cache)
+        out
     }
 }
 

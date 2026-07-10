@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use opencc_rs::{Config, OpenCC};
 use qwen3_asr::{
-    inference::{AsrInference, TranscribeResult as QwenTranscribeResult},
+    inference::{AsrInference, InferenceTimings, TranscribeResult as QwenTranscribeResult},
     tensor::Device,
 };
 use tauri::{AppHandle, Emitter};
@@ -15,7 +15,7 @@ use crate::error::{AppError, AppResult};
 use crate::forced_alignment::{tokenize_alignment_units, AlignedUnit, ForcedAlignerInference};
 use crate::models::{
     TranscribeBatchRequest, TranscribeFileRequest, TranscribeOptions, TranscriptSegment,
-    TranscriptionProgress, TranscriptionResult, FORCED_ALIGNER_MODEL_ID,
+    TranscriptionProgress, TranscriptionResult, TranscriptionTimings, FORCED_ALIGNER_MODEL_ID,
 };
 use crate::paths::{model_dir, model_status};
 use crate::srt;
@@ -35,10 +35,12 @@ const VAD_PHASE_START: f64 = 0.0;
 const VAD_PHASE_RATIO: f64 = 0.05;
 const VAD_PHASE_END: f64 = VAD_PHASE_START + VAD_PHASE_RATIO;
 const TRANSCRIBE_PHASE_START: f64 = VAD_PHASE_END;
-const TRANSCRIBE_PHASE_END_WITH_ALIGNMENT: f64 = 0.72;
-const TRANSCRIBE_PHASE_END_WITHOUT_ALIGNMENT: f64 = 0.99;
-const ALIGN_PHASE_START: f64 = 0.75;
-const ALIGN_PHASE_END: f64 = 0.99;
+// Based on the current measurements: VAD is about 5%, ASR about 91%,
+// alignment about 4% of the post-model processing time.
+const TRANSCRIBE_PHASE_END_WITH_ALIGNMENT: f64 = 0.96;
+const TRANSCRIBE_PHASE_END_WITHOUT_ALIGNMENT: f64 = 1.0;
+const ALIGN_PHASE_START: f64 = TRANSCRIBE_PHASE_END_WITH_ALIGNMENT;
+const ALIGN_PHASE_END: f64 = 1.0;
 const ASR_CHUNK_OVERHEAD_MS: u64 = 500;
 static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
 const ASR_LANGUAGES: &[&str] = &[
@@ -218,6 +220,7 @@ fn transcribe_file_inner(
     )?;
     let mut result = finalize_transcription_with_context(app, started, aligner.as_ref(), pending)?;
     result.duration_ms = started.elapsed().as_millis();
+    result.timings.total_ms = result.duration_ms;
 
     emit_progress(
         app,
@@ -476,6 +479,7 @@ struct ProgressMetrics {
     total_speech_ms: Option<u64>,
     skipped_silence_ms: Option<u64>,
     partial_segments: Option<Vec<TranscriptSegment>>,
+    timings: Option<TranscriptionTimings>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -522,6 +526,7 @@ fn emit_progress_with_metrics(
             total_speech_ms: metrics.total_speech_ms,
             skipped_silence_ms: metrics.skipped_silence_ms,
             partial_segments: metrics.partial_segments,
+            timings: metrics.timings,
         },
     );
 }
@@ -544,6 +549,7 @@ fn emit_chunk_progress(
     phase: &str,
     message: &str,
     partial_segments: Option<Vec<TranscriptSegment>>,
+    timings: Option<TranscriptionTimings>,
 ) {
     emit_progress_with_metrics(
         app,
@@ -566,6 +572,7 @@ fn emit_chunk_progress(
             total_speech_ms: Some(total_speech_ms),
             skipped_silence_ms: Some(skipped_silence_ms),
             partial_segments,
+            timings,
         }),
     );
 }
@@ -666,7 +673,7 @@ fn load_aligner_after_transcription(
 struct PendingChunk {
     chunk_index: usize,
     range: AudioRange,
-    audio: audio::PreparedAudio,
+    samples: Vec<i16>,
     raw_text: String,
     output_text: String,
     alignment_language: Option<&'static str>,
@@ -686,6 +693,7 @@ struct PendingTranscription {
     vad_estimated_segments: Vec<TranscriptSegment>,
     chunks: Vec<PendingChunk>,
     duration_ms: u128,
+    timings: TranscriptionTimings,
 }
 
 fn default_device() -> Device {
@@ -718,6 +726,7 @@ fn transcribe_with_context(
     range_end: f64,
 ) -> AppResult<PendingTranscription> {
     let started = Instant::now();
+    let mut timings = TranscriptionTimings::default();
     emit_progress(
         app,
         progress_started,
@@ -732,8 +741,10 @@ fn transcribe_with_context(
         None,
     );
 
+    let audio_prepare_started = Instant::now();
     let prepared_audio = audio::prepare_audio_for_asr(audio_path)?;
     let normalized_samples = audio::read_normalized_i16(prepared_audio.inference_path())?;
+    timings.audio_prepare_ms = audio_prepare_started.elapsed().as_millis();
     let analysis_percent = progress_between(range_start, range_end, VAD_PHASE_START);
     emit_progress(
         app,
@@ -751,6 +762,7 @@ fn transcribe_with_context(
 
     let mut last_vad_percent = analysis_percent;
     let mut last_vad_message = "";
+    let vad_started = Instant::now();
     let vad_analysis = vad::analyze_with_progress(&normalized_samples, |vad_progress| {
         let file_ratio = progress_between(VAD_PHASE_START, VAD_PHASE_END, vad_progress.ratio);
         let percent = progress_between(range_start, range_end, file_ratio);
@@ -774,6 +786,7 @@ fn transcribe_with_context(
             );
         }
     })?;
+    timings.vad_ms = vad_started.elapsed().as_millis();
     let chunks = vad_analysis.chunks;
     let total_chunk_audio_ms = vad_analysis.chunk_audio_ms.max(1);
     let skipped_silence_ms = vad_analysis.skipped_silence_ms;
@@ -813,6 +826,7 @@ fn transcribe_with_context(
             total_speech_ms: Some(total_chunk_audio_ms),
             skipped_silence_ms: Some(skipped_silence_ms),
             partial_segments: None,
+            timings: Some(timings.clone()),
         }),
     );
 
@@ -848,19 +862,23 @@ fn transcribe_with_context(
             "transcribingSegments",
             &format!("轉錄第 {chunk_index} / {total_chunks} 個有聲片段"),
             Some(vad_estimated_segments.clone()),
+            Some(timings.clone()),
         );
 
-        let chunk_audio = write_chunk_audio(&normalized_samples, *chunk)?;
-        let chunk_audio_path = chunk_audio.inference_path().to_str().ok_or_else(|| {
-            AppError::Transcription("Chunk audio path contains unsupported characters.".into())
-        })?;
+        let asr_chunk_started = Instant::now();
+        let chunk_samples = normalized_samples[chunk.start_sample..chunk.end_sample].to_vec();
+        let chunk_samples_f32 = normalized_i16_to_f32(&chunk_samples);
         let raw_result = engine
-            .transcribe(chunk_audio_path, asr_language.as_deref())
+            .transcribe_samples(&chunk_samples_f32, asr_language.as_deref())
             .map_err(|error| {
                 AppError::Transcription(format!(
                     "Qwen3-ASR failed to transcribe chunk {chunk_index}/{total_chunks}: {error}"
                 ))
             })?;
+        let asr_chunk_elapsed_ms = asr_chunk_started.elapsed().as_millis();
+        timings.asr_ms = timings.asr_ms.saturating_add(asr_chunk_elapsed_ms);
+        add_inference_timings(&mut timings, &raw_result.timings);
+        timings.asr_chunk_count = timings.asr_chunk_count.saturating_add(1);
 
         let raw_chunk_text = normalize_asr_text(&raw_result, language_forced);
         let chunk_text =
@@ -879,7 +897,7 @@ fn transcribe_with_context(
             pending_chunks.push(PendingChunk {
                 chunk_index,
                 range: *chunk,
-                audio: chunk_audio,
+                samples: chunk_samples,
                 raw_text: raw_chunk_text,
                 output_text: chunk_text,
                 alignment_language,
@@ -913,8 +931,12 @@ fn transcribe_with_context(
             "transcribingSegments",
             &format!("完成第 {chunk_index} / {total_chunks} 個有聲片段"),
             Some(vad_estimated_segments.clone()),
+            Some(timings.clone()),
         );
     }
+
+    let duration_ms = started.elapsed().as_millis();
+    timings.total_ms = duration_ms;
 
     Ok(PendingTranscription {
         audio_path: audio_path.to_string(),
@@ -929,7 +951,8 @@ fn transcribe_with_context(
         transcript_parts,
         vad_estimated_segments,
         chunks: pending_chunks,
-        duration_ms: started.elapsed().as_millis(),
+        duration_ms,
+        timings,
     })
 }
 
@@ -937,7 +960,7 @@ fn finalize_transcription_with_context(
     app: &AppHandle,
     progress_started: Instant,
     aligner: Option<&ForcedAlignerInference>,
-    pending: PendingTranscription,
+    mut pending: PendingTranscription,
 ) -> AppResult<TranscriptionResult> {
     let alignment_started = Instant::now();
     let vad_estimated_segments = pending.vad_estimated_segments.clone();
@@ -959,53 +982,51 @@ fn finalize_transcription_with_context(
             processed_alignment_ms,
             total_alignment_ms,
         );
-        let aligned_segments = if let (Some(aligner), Some(language)) =
-            (aligner, chunk.alignment_language)
-        {
-            emit_chunk_progress(
-                app,
-                progress_started,
-                &pending.audio_path,
-                pending.file_index,
-                pending.total_files,
-                chunk.chunk_index,
-                pending.total_chunks,
-                chunk.range,
-                processed_alignment_ms,
-                pending.total_speech_ms,
-                pending.skipped_silence_ms,
-                before_percent,
-                before_eta_ms,
-                "aligningTimestamps",
-                &format!(
-                    "對齊第 {} / {} 個片段的時間戳",
-                    chunk.chunk_index, pending.total_chunks
-                ),
-                Some(vad_estimated_segments.clone()),
-            );
-            let chunk_audio_path = chunk.audio.inference_path().to_str().ok_or_else(|| {
-                AppError::Transcription("Chunk audio path contains unsupported characters.".into())
-            })?;
-            let aligned_units = aligner
-                .align(chunk_audio_path, &chunk.raw_text, language)
-                .map_err(|error| {
-                    AppError::Transcription(format!(
-                        "Qwen3 ForcedAligner failed on chunk {}/{}: {error}",
+        let aligned_segments =
+            if let (Some(aligner), Some(language)) = (aligner, chunk.alignment_language) {
+                emit_chunk_progress(
+                    app,
+                    progress_started,
+                    &pending.audio_path,
+                    pending.file_index,
+                    pending.total_files,
+                    chunk.chunk_index,
+                    pending.total_chunks,
+                    chunk.range,
+                    processed_alignment_ms,
+                    pending.total_speech_ms,
+                    pending.skipped_silence_ms,
+                    before_percent,
+                    before_eta_ms,
+                    "aligningTimestamps",
+                    &format!(
+                        "對齊第 {} / {} 個片段的時間戳",
                         chunk.chunk_index, pending.total_chunks
-                    ))
-                })?;
-            build_aligned_segments_with_offset(
-                &chunk.raw_text,
-                &aligned_units,
-                language,
-                output_language.as_deref(),
-                chunk.range.start_ms(),
-                chunk.range.duration_ms(),
-                pending.options.segment_by_punctuation,
-            )?
-        } else {
-            None
-        };
+                    ),
+                    Some(vad_estimated_segments.clone()),
+                    Some(pending.timings.clone()),
+                );
+                let chunk_samples_f32 = normalized_i16_to_f32(&chunk.samples);
+                let aligned_units = aligner
+                    .align_samples(&chunk_samples_f32, &chunk.raw_text, language)
+                    .map_err(|error| {
+                        AppError::Transcription(format!(
+                            "Qwen3 ForcedAligner failed on chunk {}/{}: {error}",
+                            chunk.chunk_index, pending.total_chunks
+                        ))
+                    })?;
+                build_aligned_segments_with_offset(
+                    &chunk.raw_text,
+                    &aligned_units,
+                    language,
+                    output_language.as_deref(),
+                    chunk.range.start_ms(),
+                    chunk.range.duration_ms(),
+                    pending.options.segment_by_punctuation,
+                )?
+            } else {
+                None
+            };
 
         segments.extend(aligned_segments.unwrap_or_else(|| {
             build_approximate_segments_with_offset(
@@ -1017,6 +1038,8 @@ fn finalize_transcription_with_context(
         }));
         processed_alignment_ms = processed_alignment_ms.saturating_add(chunk.range.duration_ms());
     }
+
+    pending.timings.alignment_ms = alignment_started.elapsed().as_millis();
 
     emit_progress_with_metrics(
         app,
@@ -1047,24 +1070,30 @@ fn finalize_transcription_with_context(
             total_speech_ms: Some(pending.total_speech_ms),
             skipped_silence_ms: Some(pending.skipped_silence_ms),
             partial_segments: Some(vad_estimated_segments),
+            timings: Some(pending.timings.clone()),
         }),
     );
 
+    let finalize_started = Instant::now();
     let text = pending.transcript_parts.join("\n");
     let srt_path = if pending.options.write_srt {
         Some(write_srt(&pending.audio_path, &pending.options, &segments)?)
     } else {
         None
     };
+    pending.timings.finalize_ms = finalize_started.elapsed().as_millis();
+    pending.timings.total_ms = pending
+        .duration_ms
+        .saturating_add(pending.timings.alignment_ms)
+        .saturating_add(pending.timings.finalize_ms);
 
     Ok(TranscriptionResult {
         audio_path: pending.audio_path,
         text,
         segments,
         srt_path,
-        duration_ms: pending
-            .duration_ms
-            .saturating_add(alignment_started.elapsed().as_millis()),
+        duration_ms: pending.timings.total_ms,
+        timings: pending.timings,
     })
 }
 
@@ -1080,8 +1109,28 @@ fn chunk_work_ms(chunk: AudioRange) -> u64 {
     chunk.duration_ms().saturating_add(ASR_CHUNK_OVERHEAD_MS)
 }
 
-fn write_chunk_audio(samples: &[i16], chunk: AudioRange) -> AppResult<audio::PreparedAudio> {
-    audio::write_temp_asr_wav(&samples[chunk.start_sample..chunk.end_sample])
+fn add_inference_timings(target: &mut TranscriptionTimings, source: &InferenceTimings) {
+    target.asr_mel_ms = target.asr_mel_ms.saturating_add(source.mel_ms);
+    target.asr_encoder_ms = target
+        .asr_encoder_ms
+        .saturating_add(source.audio_encoder_ms);
+    target.asr_prompt_ms = target.asr_prompt_ms.saturating_add(source.prompt_ms);
+    target.asr_prefill_ms = target.asr_prefill_ms.saturating_add(source.prefill_ms);
+    target.asr_decode_ms = target.asr_decode_ms.saturating_add(source.decode_ms);
+    target.asr_postprocess_ms = target
+        .asr_postprocess_ms
+        .saturating_add(source.postprocess_ms);
+    target.asr_generated_tokens = target
+        .asr_generated_tokens
+        .saturating_add(source.generated_tokens);
+}
+
+fn normalized_i16_to_f32(samples: &[i16]) -> Vec<f32> {
+    const I16_SCALE: f32 = 32_768.0;
+    samples
+        .iter()
+        .map(|&sample| sample as f32 / I16_SCALE)
+        .collect()
 }
 
 fn normalize_output_language(language: Option<&str>) -> Option<String> {
@@ -1510,8 +1559,8 @@ mod tests {
         let alignment_start = progress_between(0.0, 1.0, ALIGN_PHASE_START);
         let alignment_end = progress_between(0.0, 1.0, ALIGN_PHASE_END);
         let no_alignment_end = progress_between(0.0, 1.0, TRANSCRIBE_PHASE_END_WITHOUT_ALIGNMENT);
-        assert!(asr_end < alignment_start);
-        assert!(alignment_start < alignment_end);
+        assert!(asr_end <= alignment_start);
+        assert!(alignment_start <= alignment_end);
         assert!(alignment_end <= no_alignment_end);
     }
 
@@ -1656,6 +1705,7 @@ mod tests {
             language: "ChineseA".into(),
             raw_output: "language ChineseA I幫你股票賺了很多錢嗎？".into(),
             duration_seconds: 1.0,
+            timings: InferenceTimings::default(),
         };
 
         assert_eq!(

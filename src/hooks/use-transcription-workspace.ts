@@ -147,6 +147,19 @@ function buildOptionsPayload(task: TranscriptionTask) {
   };
 }
 
+function canShareTranscriptionBatch(
+  first: TranscriptionTask,
+  candidate: TranscriptionTask,
+) {
+  return (
+    first.modelId === candidate.modelId &&
+    first.outputDir === candidate.outputDir &&
+    first.options.language === candidate.options.language &&
+    first.options.writeSrt === candidate.options.writeSrt &&
+    first.options.segmentByPunctuation === candidate.options.segmentByPunctuation
+  );
+}
+
 function shouldUseForcedAligner(options: OptionsState) {
   if (!options.writeSrt) return false;
 
@@ -292,6 +305,7 @@ export function useTranscriptionWorkspace() {
   >(null);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const runningTaskIdRef = useRef<string | null>(null);
+  const runningTaskBatchRef = useRef<TranscriptionTask[]>([]);
   const openTaskDialogRef = useRef<(paths: string[]) => void>(() => {});
   const downloadSpeedMovingAverageRef =
     useRef<DownloadSpeedMovingAverageTracker | null>(null);
@@ -355,12 +369,16 @@ export function useTranscriptionWorkspace() {
     [defaultModelId, options, outputDir],
   );
 
-  const runQueuedTask = useCallback(async (task: TranscriptionTask) => {
-    runningTaskIdRef.current = task.id;
+  const runQueuedTasks = useCallback(async (batch: TranscriptionTask[]) => {
+    if (batch.length === 0) return;
+
+    const batchIds = new Set(batch.map((task) => task.id));
+    runningTaskIdRef.current = batch[0].id;
+    runningTaskBatchRef.current = batch;
     setTranscriptionProgress(null);
     setTasks((current) =>
       current.map((item) =>
-        item.id === task.id
+        batchIds.has(item.id)
           ? {
               ...item,
               status: "running",
@@ -376,34 +394,54 @@ export function useTranscriptionWorkspace() {
     );
 
     try {
-      const result = await invoke<TranscriptionResult>("transcribe_file", {
-        request: {
-          audioPath: task.audioPath,
-          options: buildOptionsPayload(task),
-        },
-      });
+      const results =
+        batch.length === 1
+          ? [
+              await invoke<TranscriptionResult>("transcribe_file", {
+                request: {
+                  audioPath: batch[0].audioPath,
+                  options: buildOptionsPayload(batch[0]),
+                },
+              }),
+            ]
+          : await invoke<TranscriptionResult[]>("transcribe_batch", {
+              request: {
+                audioPaths: batch.map((task) => task.audioPath),
+                options: buildOptionsPayload(batch[0]),
+              },
+            });
+
+      if (results.length !== batch.length) {
+        throw new Error("批次轉錄回傳的結果數量不一致");
+      }
+
+      const resultsByTaskId = new Map(
+        batch.map((task, index) => [task.id, results[index]]),
+      );
 
       setTasks((current) =>
         current.map((item) =>
-          item.id === task.id
+          batchIds.has(item.id)
             ? {
                 ...item,
                 status: "completed",
                 progress: null,
                 progressUpdatedAt: null,
-                result,
+                result: resultsByTaskId.get(item.id)!,
                 completedAt: Date.now(),
               }
             : item,
         ),
       );
-      toast.success(`${basename(task.audioPath)} 轉錄完成`);
-      void sendTaskNotification(task, result);
+      for (const [index, task] of batch.entries()) {
+        toast.success(`${basename(task.audioPath)} 轉錄完成`);
+        void sendTaskNotification(task, results[index]);
+      }
     } catch (error) {
       const message = formatInvokeError(error);
       setTasks((current) =>
         current.map((item) =>
-          item.id === task.id
+          batchIds.has(item.id)
             ? {
                 ...item,
                 status: "failed",
@@ -411,14 +449,18 @@ export function useTranscriptionWorkspace() {
                 progressUpdatedAt: null,
                 completedAt: Date.now(),
               }
-            : item,
+              : item,
         ),
       );
-      toast.error(`${basename(task.audioPath)} 轉錄失敗`, {
-        description: message,
-      });
+      toast.error(
+        batch.length === 1
+          ? `${basename(batch[0].audioPath)} 轉錄失敗`
+          : `${batch.length} 個轉錄任務失敗`,
+        { description: message },
+      );
     } finally {
       runningTaskIdRef.current = null;
+      runningTaskBatchRef.current = [];
       setTranscriptionProgress(null);
     }
   }, []);
@@ -442,7 +484,15 @@ export function useTranscriptionWorkspace() {
         }
       }),
       listen<TranscriptionProgress>("transcription-progress", (event) => {
-        const runningTaskId = runningTaskIdRef.current;
+        const progressPath =
+          event.payload.audioPath ?? event.payload.currentFile ?? null;
+        const progressTask = progressPath
+          ? runningTaskBatchRef.current.find(
+              (task) => task.audioPath === progressPath,
+            )
+          : null;
+        const runningTaskId =
+          progressTask?.id ?? runningTaskIdRef.current;
         const progressUpdatedAt = Date.now();
 
         setTranscriptionProgress(event.payload);
@@ -542,11 +592,17 @@ export function useTranscriptionWorkspace() {
   useEffect(() => {
     if (runningTaskIdRef.current) return;
 
-    const nextTask = tasks.find((task) => task.status === "queued");
-    if (nextTask) {
-      void runQueuedTask(nextTask);
+    const queuedTasks = tasks.filter((task) => task.status === "queued");
+    const firstTask = queuedTasks[0];
+    if (firstTask) {
+      const batch: TranscriptionTask[] = [];
+      for (const task of queuedTasks) {
+        if (!canShareTranscriptionBatch(firstTask, task)) break;
+        batch.push(task);
+      }
+      void runQueuedTasks(batch);
     }
-  }, [runQueuedTask, tasks]);
+  }, [runQueuedTasks, tasks]);
 
   async function refreshRuntime() {
     await Promise.all([refreshModels(), refreshFfmpeg()]);

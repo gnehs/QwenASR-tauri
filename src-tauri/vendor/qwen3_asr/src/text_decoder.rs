@@ -1,38 +1,27 @@
 use anyhow::Result;
 use std::collections::HashMap;
+
 use crate::tensor::{DType, Device, Tensor};
 
 use crate::config::TextDecoderConfig;
-use crate::layers::{RmsNorm, TextDecoderLayer};
+use crate::layers::{LayerKvCache, RmsNorm, TextDecoderLayer};
 use crate::weights::get_weight;
 
 /// KV cache for autoregressive generation.
 pub struct KvCache {
-    pub layers: Vec<Option<(Tensor, Tensor)>>,
+    layers: Vec<LayerKvCache>,
 }
 
 impl KvCache {
     pub fn new(num_layers: usize) -> Self {
-        let mut layers = Vec::with_capacity(num_layers);
-        for _ in 0..num_layers {
-            layers.push(None);
-        }
+        let layers = std::iter::repeat_with(LayerKvCache::new)
+            .take(num_layers)
+            .collect();
         Self { layers }
     }
 
-    pub fn get(&self, layer: usize) -> Option<&(Tensor, Tensor)> {
-        self.layers[layer].as_ref()
-    }
-
-    pub fn set(&mut self, layer: usize, cache: (Tensor, Tensor)) {
-        self.layers[layer] = Some(cache);
-    }
-
     pub fn seq_len(&self) -> i64 {
-        self.layers[0]
-            .as_ref()
-            .map(|(k, _)| k.size()[2])
-            .unwrap_or(0)
+        self.layers.first().map_or(0, LayerKvCache::seq_len)
     }
 }
 
@@ -101,11 +90,8 @@ impl TextDecoder {
     ) -> Tensor {
         let mut hidden = hidden_states.shallow_clone();
 
-        for (i, layer) in self.layers.iter().enumerate() {
-            let cache = kv_cache.get(i);
-            let (h, new_cache) = layer.forward(&hidden, cos, sin, cache, mask);
-            kv_cache.set(i, new_cache);
-            hidden = h;
+        for (layer, layer_cache) in self.layers.iter().zip(kv_cache.layers.iter_mut()) {
+            hidden = layer.forward(&hidden, cos, sin, layer_cache, mask);
         }
 
         let hidden = self.norm.forward(&hidden);

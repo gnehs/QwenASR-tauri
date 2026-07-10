@@ -36,12 +36,30 @@ export type TranscriptSegment = {
   text: string;
 };
 
+export type TranscriptionTimings = {
+  audioPrepareMs: number;
+  vadMs: number;
+  asrMs: number;
+  asrMelMs: number;
+  asrEncoderMs: number;
+  asrPromptMs: number;
+  asrPrefillMs: number;
+  asrDecodeMs: number;
+  asrPostprocessMs: number;
+  alignmentMs: number;
+  finalizeMs: number;
+  asrChunkCount: number;
+  asrGeneratedTokens: number;
+  totalMs: number;
+};
+
 export type TranscriptionResult = {
   audioPath: string;
   text: string;
   segments: TranscriptSegment[];
   srtPath: string | null;
   durationMs: number;
+  timings: TranscriptionTimings;
 };
 
 export type TranscriptionProgress = {
@@ -63,6 +81,7 @@ export type TranscriptionProgress = {
   totalSpeechMs: number | null;
   skippedSilenceMs: number | null;
   partialSegments: TranscriptSegment[] | null;
+  timings: TranscriptionTimings | null;
 };
 
 export type OptionsState = {

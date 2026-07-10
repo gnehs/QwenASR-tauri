@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import {
   ArchiveIcon,
+  ChevronRightIcon,
   DownloadIcon,
   FileAudioIcon,
   FolderOpenIcon,
@@ -79,6 +80,7 @@ import {
   formatBytes,
   formatDuration,
   formatTimestamp,
+  formatTiming,
 } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type {
@@ -87,6 +89,7 @@ import type {
   TaskDraft,
   TaskStatus,
   TranscriptionTask,
+  TranscriptionTimings,
 } from "@/types/transcription";
 
 const statusMeta: Record<
@@ -125,6 +128,53 @@ function taskLanguageLabel(task: TranscriptionTask) {
     languageItems.find((item) => item.value === task.options.language)?.label ??
     "自動偵測"
   );
+}
+
+function timingRows(timings: TranscriptionTimings) {
+  return [
+    [
+      "總時間",
+      formatTiming(timings.totalMs),
+      "ASR",
+      formatTiming(timings.asrMs),
+    ],
+    [
+      "decode",
+      formatTiming(timings.asrDecodeMs),
+      "encoder",
+      formatTiming(timings.asrEncoderMs),
+    ],
+    [
+      "VAD",
+      formatTiming(timings.vadMs),
+      "對齊",
+      formatTiming(timings.alignmentMs),
+    ],
+    [
+      "音訊準備",
+      formatTiming(timings.audioPrepareMs),
+      "收尾",
+      formatTiming(timings.finalizeMs),
+    ],
+    [
+      "mel",
+      formatTiming(timings.asrMelMs),
+      "prompt",
+      formatTiming(timings.asrPromptMs),
+    ],
+    [
+      "prefill",
+      formatTiming(timings.asrPrefillMs),
+      "後處理",
+      formatTiming(timings.asrPostprocessMs),
+    ],
+    [
+      "ASR chunks",
+      String(timings.asrChunkCount),
+      "產生 token",
+      String(timings.asrGeneratedTokens),
+    ],
+  ] as const;
 }
 
 export function TaskManagerPanel({
@@ -721,6 +771,8 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
 
   if (!result) return null;
 
+  const resultTimingRows = timingRows(result.timings);
+
   return (
     <ScrollArea
       className="task-result-scroll"
@@ -728,8 +780,11 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
     >
       <div className="task-result-stack">
         <div className="task-result-meta">
-          <div>
-            <div className="break-words text-sm font-medium">
+          <div className="min-w-0">
+            <div
+              className="truncate text-sm font-medium"
+              title={basename(result.audioPath)}
+            >
               {basename(result.audioPath)}
             </div>
             <div className="truncate text-sm text-muted-foreground">
@@ -740,6 +795,49 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
             總處理 {formatDuration(result.durationMs)}
           </Badge>
         </div>
+        <details className="group">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 [&::-webkit-details-marker]:hidden">
+            <div>
+              <div className="text-sm font-medium">處理計時</div>
+              <div className="text-xs text-muted-foreground">
+                ASR 細項與管線耗時
+              </div>
+            </div>
+            <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
+          </summary>
+          <div className="pt-1">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-1/4">項目</TableHead>
+                <TableHead className="w-1/4 text-right">數值</TableHead>
+                <TableHead className="w-1/4">項目</TableHead>
+                <TableHead className="w-1/4 text-right">數值</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {resultTimingRows.map(
+                  ([leftLabel, leftValue, rightLabel, rightValue]) => (
+                    <TableRow key={leftLabel}>
+                      <TableCell className="max-w-0 truncate" title={leftLabel}>
+                        {leftLabel}
+                      </TableCell>
+                      <TableCell className="max-w-0 truncate text-right font-mono tabular-nums text-muted-foreground">
+                        {leftValue}
+                      </TableCell>
+                      <TableCell className="max-w-0 truncate" title={rightLabel}>
+                        {rightLabel}
+                      </TableCell>
+                      <TableCell className="max-w-0 truncate text-right font-mono tabular-nums text-muted-foreground">
+                        {rightValue}
+                      </TableCell>
+                    </TableRow>
+                  ),
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </details>
         <Textarea readOnly value={result.text} className="min-h-36 resize-none" />
         <Table>
           <TableHeader>
