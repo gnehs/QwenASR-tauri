@@ -18,7 +18,8 @@ env:
 jobs:
   build-macos:
     name: Build macOS app
-    runs-on: macos-latest
+    # MLX v0.30.6 builds against metal-cpp 26 and requires the matching SDK.
+    runs-on: macos-26
     timeout-minutes: 90
     env:
       MACOSX_DEPLOYMENT_TARGET: "14.0"
