@@ -1,6 +1,6 @@
 import { Progress } from "@/components/ui/progress";
 import { Trans, useLingui } from "@lingui/react/macro";
-import { formatDuration, formatTiming } from "@/lib/format";
+import { formatDuration } from "@/lib/format";
 import type { TranscriptionProgress } from "@/types/transcription";
 
 function phaseLabel(phase: string, t: ReturnType<typeof useLingui>["t"]) {
@@ -72,14 +72,6 @@ export function TranscriptionProgressPanel({
           progress.totalSpeechMs,
         )}`
       : null;
-  const timings = progress.timings;
-  const otherStagesMs = timings
-    ? timings.audioPrepareMs +
-      timings.vadMs +
-      timings.alignmentMs +
-      timings.finalizeMs
-    : null;
-
   return (
     <section className="transcription-progress" aria-label={t`轉錄進度摘要`}>
       <div className="transcription-progress-head">
@@ -132,24 +124,11 @@ export function TranscriptionProgressPanel({
       </div>
 
       <div className="transcription-progress-foot">
-          <span><Trans>已用 {formatDuration(elapsedMs)}</Trans></span>
+        <span><Trans>已用 {formatDuration(elapsedMs)}</Trans></span>
         <span className="truncate" title={processedSpeech ?? undefined}>
           {processedSpeech ? <Trans>已處理 {processedSpeech}</Trans> : <Trans>正在估算語音量</Trans>}
         </span>
       </div>
-
-      {timings ? (
-        <div
-          className="flex flex-wrap gap-x-3 gap-y-1 border-t pt-2 text-xs tabular-nums text-muted-foreground"
-          aria-label={t`處理計時`}
-        >
-          <span className="font-medium text-foreground"><Trans>計時</Trans></span>
-          <span>ASR {formatTiming(timings.asrMs)}</span>
-          <span>decode {formatTiming(timings.asrDecodeMs)}</span>
-          <span>encoder {formatTiming(timings.asrEncoderMs)}</span>
-          <span><Trans>其他 {formatTiming(otherStagesMs)}</Trans></span>
-        </div>
-      ) : null}
     </section>
   );
 }

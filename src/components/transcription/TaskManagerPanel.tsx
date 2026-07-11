@@ -6,7 +6,6 @@ import { useLingui as useLinguiRuntime } from "@lingui/react";
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
   ArchiveIcon,
-  ChevronRightIcon,
   CircleStopIcon,
   DownloadIcon,
   FileAudioIcon,
@@ -60,6 +59,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
   SelectContent,
@@ -78,7 +78,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import { TranscriptionProgressPanel } from "@/components/transcription/TranscriptionProgressPanel";
 import { localizeLanguageGroups } from "@/lib/app-constants";
 import {
@@ -158,48 +157,48 @@ function taskLanguageLabel(
   );
 }
 
-function timingRows(timings: TranscriptionTimings, t: Translate) {
+function timingRows(timings: TranscriptionTimings, translate: RuntimeTranslate) {
   return [
     [
-      t`總時間`,
+      translate(msg`總時間`),
       formatTiming(timings.totalMs),
-      "ASR",
+      translate(msg`ASR`),
       formatTiming(timings.asrMs),
     ],
     [
-      "decode",
+      translate(msg`解碼`),
       formatTiming(timings.asrDecodeMs),
-      "encoder",
+      translate(msg`編碼器`),
       formatTiming(timings.asrEncoderMs),
     ],
     [
-      "VAD",
+      translate(msg`VAD`),
       formatTiming(timings.vadMs),
-      t`對齊`,
+      translate(msg`對齊`),
       formatTiming(timings.alignmentMs),
     ],
     [
-      t`音訊準備`,
+      translate(msg`音訊準備`),
       formatTiming(timings.audioPrepareMs),
-      t`收尾`,
+      translate(msg`收尾`),
       formatTiming(timings.finalizeMs),
     ],
     [
-      "mel",
+      translate(msg`Mel 特徵`),
       formatTiming(timings.asrMelMs),
-      "prompt",
+      translate(msg`提示詞`),
       formatTiming(timings.asrPromptMs),
     ],
     [
-      "prefill",
+      translate(msg`預填`),
       formatTiming(timings.asrPrefillMs),
-      t`後處理`,
+      translate(msg`後處理`),
       formatTiming(timings.asrPostprocessMs),
     ],
     [
-      "ASR chunks",
+      translate(msg`ASR 分段`),
       String(timings.asrChunkCount),
-      t`產生 token`,
+      translate(msg`產生 token`),
       String(timings.asrGeneratedTokens),
     ],
   ] as const;
@@ -757,6 +756,7 @@ function TaskDetail({
   localizedLanguageItems: SelectOption[];
 }) {
   const { t } = useLingui();
+  const { _ } = useLinguiRuntime();
   const progress = task.progress;
   const result = task.result;
 
@@ -861,48 +861,77 @@ function TaskDetail({
 
   if (!result) return null;
 
-  const resultTimingRows = timingRows(result.timings, t);
+  const resultTimingRows = timingRows(result.timings, _);
 
   return (
-    <ScrollArea
-      className="task-result-scroll"
-      viewportClassName="scroll-fade"
-    >
-      <div className="task-result-stack">
-        <div className="task-result-meta">
-          <div className="min-w-0">
-            <div
-              className="truncate text-sm font-medium"
-              title={basename(result.audioPath)}
-            >
-              {basename(result.audioPath)}
+    <Tabs defaultValue="transcript" className="min-h-0 flex-1">
+      <TabsList className="w-full" variant="line">
+        <TabsTrigger value="transcript"><Trans>逐字稿</Trans></TabsTrigger>
+        <TabsTrigger value="subtitles"><Trans>字幕</Trans></TabsTrigger>
+        <TabsTrigger value="stats"><Trans>統計</Trans></TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="transcript" className="min-h-0 flex-1">
+        <ScrollArea
+          className="task-result-scroll"
+          viewportClassName="scroll-fade"
+        >
+          <div className="task-result-stack">
+            <div className="whitespace-pre-wrap break-words text-sm leading-7">
+              {result.text}
             </div>
+          </div>
+        </ScrollArea>
+      </TabsContent>
+
+      <TabsContent value="subtitles" className="min-h-0 flex-1">
+        <ScrollArea
+          className="task-result-scroll"
+          viewportClassName="scroll-fade"
+        >
+          <div className="task-result-stack">
             <div className="truncate text-sm text-muted-foreground">
               {result.srtPath ? <Trans>SRT: {result.srtPath}</Trans> : <Trans>未輸出 SRT</Trans>}
             </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead><Trans>時間</Trans></TableHead>
+                  <TableHead><Trans>文字</Trans></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {result.segments.map((segment, index) => (
+                  <TableRow key={`${segment.startMs}-${index}`}>
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      {formatTimestamp(segment.startMs)} - {formatTimestamp(segment.endMs)}
+                    </TableCell>
+                    <TableCell className="srt-preview-text">{segment.text}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </div>
-          <Badge variant="outline">
-            <Trans>總處理 {formatDuration(result.durationMs)}</Trans>
-          </Badge>
-        </div>
-        <details className="group">
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 [&::-webkit-details-marker]:hidden">
-            <div>
-              <div className="text-sm font-medium"><Trans>處理計時</Trans></div>
-              <div className="text-xs text-muted-foreground">
-                <Trans>ASR 細項與管線耗時</Trans>
-              </div>
+        </ScrollArea>
+      </TabsContent>
+
+      <TabsContent value="stats" className="min-h-0 flex-1">
+        <ScrollArea
+          className="task-result-scroll"
+          viewportClassName="scroll-fade"
+        >
+          <div className="task-result-stack">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm font-medium"><Trans>總處理時間</Trans></span>
+              <Badge variant="outline">{formatDuration(result.durationMs)}</Badge>
             </div>
-            <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
-          </summary>
-          <div className="pt-1">
-          <Table className="table-fixed">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-1/4"><Trans>項目</Trans></TableHead>
-                <TableHead className="w-1/4 text-right"><Trans>數值</Trans></TableHead>
-                <TableHead className="w-1/4"><Trans>項目</Trans></TableHead>
-                <TableHead className="w-1/4 text-right"><Trans>數值</Trans></TableHead>
+            <Table className="table-fixed">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-1/4"><Trans>項目</Trans></TableHead>
+                  <TableHead className="w-1/4 text-right"><Trans>數值</Trans></TableHead>
+                  <TableHead className="w-1/4"><Trans>項目</Trans></TableHead>
+                  <TableHead className="w-1/4 text-right"><Trans>數值</Trans></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -927,27 +956,8 @@ function TaskDetail({
               </TableBody>
             </Table>
           </div>
-        </details>
-        <Textarea readOnly value={result.text} className="min-h-36 resize-none" />
-        <Table>
-          <TableHeader>
-            <TableRow>
-            <TableHead><Trans>時間</Trans></TableHead>
-            <TableHead><Trans>文字</Trans></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {result.segments.map((segment, index) => (
-              <TableRow key={`${segment.startMs}-${index}`}>
-                <TableCell className="whitespace-nowrap text-muted-foreground">
-                  {formatTimestamp(segment.startMs)} - {formatTimestamp(segment.endMs)}
-                </TableCell>
-                <TableCell className="srt-preview-text">{segment.text}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </ScrollArea>
+        </ScrollArea>
+      </TabsContent>
+    </Tabs>
   );
 }
