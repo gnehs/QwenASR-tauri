@@ -148,19 +148,6 @@ function buildOptionsPayload(task: TranscriptionTask) {
   };
 }
 
-function canShareTranscriptionBatch(
-  first: TranscriptionTask,
-  candidate: TranscriptionTask,
-) {
-  return (
-    first.modelId === candidate.modelId &&
-    first.outputDir === candidate.outputDir &&
-    first.options.language === candidate.options.language &&
-    first.options.writeSrt === candidate.options.writeSrt &&
-    first.options.segmentByPunctuation === candidate.options.segmentByPunctuation
-  );
-}
-
 function shouldUseForcedAligner(options: OptionsState) {
   if (!options.writeSrt) return false;
 
@@ -310,7 +297,7 @@ export function useTranscriptionWorkspace() {
   >(null);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const runningTaskIdRef = useRef<string | null>(null);
-  const runningTaskBatchRef = useRef<TranscriptionTask[]>([]);
+  const runningTaskAudioPathRef = useRef<string | null>(null);
   const openTaskDialogRef = useRef<(paths: string[]) => void>(() => {});
   const downloadSpeedMovingAverageRef =
     useRef<DownloadSpeedMovingAverageTracker | null>(null);
@@ -374,16 +361,13 @@ export function useTranscriptionWorkspace() {
     [defaultModelId, options, outputDir, t],
   );
 
-  const runQueuedTasks = useCallback(async (batch: TranscriptionTask[]) => {
-    if (batch.length === 0) return;
-
-    const batchIds = new Set(batch.map((task) => task.id));
-    runningTaskIdRef.current = batch[0].id;
-    runningTaskBatchRef.current = batch;
+  const runQueuedTask = useCallback(async (task: TranscriptionTask) => {
+    runningTaskIdRef.current = task.id;
+    runningTaskAudioPathRef.current = task.audioPath;
     setTranscriptionProgress(null);
     setTasks((current) =>
       current.map((item) =>
-        batchIds.has(item.id)
+        item.id === task.id
           ? {
               ...item,
               status: "running",
@@ -399,60 +383,43 @@ export function useTranscriptionWorkspace() {
     );
 
     try {
-      const results =
-        batch.length === 1
-          ? [
-              await invoke<TranscriptionResult>("transcribe_file", {
-                request: {
-                  audioPath: batch[0].audioPath,
-                  options: buildOptionsPayload(batch[0]),
-                },
-              }),
-            ]
-          : await invoke<TranscriptionResult[]>("transcribe_batch", {
-              request: {
-                audioPaths: batch.map((task) => task.audioPath),
-                options: buildOptionsPayload(batch[0]),
-              },
-            });
-
-      if (results.length !== batch.length) {
-        throw new Error(t`批次轉錄回傳的結果數量不一致`);
-      }
-
-      const resultsByTaskId = new Map(
-        batch.map((task, index) => [task.id, results[index]]),
-      );
+      // A queued task owns the worker until its complete command response arrives.
+      // The batch command intentionally runs ASR for later files before it finalizes
+      // the current file, which does not match the task queue's end-to-end ordering.
+      const result = await invoke<TranscriptionResult>("transcribe_file", {
+        request: {
+          audioPath: task.audioPath,
+          options: buildOptionsPayload(task),
+        },
+      });
 
       setTasks((current) =>
         current.map((item) =>
-          batchIds.has(item.id)
+          item.id === task.id
             ? {
                 ...item,
                 status: "completed",
                 progress: null,
                 progressUpdatedAt: null,
-                result: resultsByTaskId.get(item.id)!,
+                result,
                 completedAt: Date.now(),
               }
             : item,
         ),
       );
-      for (const [index, task] of batch.entries()) {
-        toast.success(t`${basename(task.audioPath)} 轉錄完成`);
-        void sendTaskNotification(
-          task,
-          results[index],
-          t`轉錄完成`,
-          t`已完成`,
-          t`，SRT 已輸出`,
-        );
-      }
+      toast.success(t`${basename(task.audioPath)} 轉錄完成`);
+      void sendTaskNotification(
+        task,
+        result,
+        t`轉錄完成`,
+        t`已完成`,
+        t`，SRT 已輸出`,
+      );
     } catch (error) {
       const message = formatInvokeError(error);
       setTasks((current) =>
         current.map((item) =>
-          batchIds.has(item.id)
+          item.id === task.id
             ? {
                 ...item,
                 status: "failed",
@@ -463,15 +430,12 @@ export function useTranscriptionWorkspace() {
               : item,
         ),
       );
-      toast.error(
-        batch.length === 1
-          ? t`${basename(batch[0].audioPath)} 轉錄失敗`
-          : t`${batch.length} 個轉錄任務失敗`,
-        { description: message },
-      );
+      toast.error(t`${basename(task.audioPath)} 轉錄失敗`, {
+        description: message,
+      });
     } finally {
       runningTaskIdRef.current = null;
-      runningTaskBatchRef.current = [];
+      runningTaskAudioPathRef.current = null;
       setTranscriptionProgress(null);
     }
   }, [t]);
@@ -497,17 +461,17 @@ export function useTranscriptionWorkspace() {
       listen<TranscriptionProgress>("transcription-progress", (event) => {
         const progressPath =
           event.payload.audioPath ?? event.payload.currentFile ?? null;
-        const progressTask = progressPath
-          ? runningTaskBatchRef.current.find(
-              (task) => task.audioPath === progressPath,
-            )
-          : null;
-        const runningTaskId =
-          progressTask?.id ?? runningTaskIdRef.current;
+        const runningTaskId = runningTaskIdRef.current;
+        const belongsToRunningTask =
+          runningTaskId !== null &&
+          (!progressPath || runningTaskAudioPathRef.current === progressPath);
+
+        if (!belongsToRunningTask) return;
+
         const progressUpdatedAt = Date.now();
 
         setTranscriptionProgress(event.payload);
-        if (runningTaskId && event.payload.state !== "error") {
+        if (event.payload.state !== "error") {
           setTasks((current) =>
             current.map((task) =>
               task.id === runningTaskId
@@ -606,14 +570,9 @@ export function useTranscriptionWorkspace() {
     const queuedTasks = tasks.filter((task) => task.status === "queued");
     const firstTask = queuedTasks[0];
     if (firstTask) {
-      const batch: TranscriptionTask[] = [];
-      for (const task of queuedTasks) {
-        if (!canShareTranscriptionBatch(firstTask, task)) break;
-        batch.push(task);
-      }
-      void runQueuedTasks(batch);
+      void runQueuedTask(firstTask);
     }
-  }, [runQueuedTasks, tasks]);
+  }, [runQueuedTask, tasks]);
 
   async function refreshRuntime() {
     await Promise.all([refreshModels(), refreshFfmpeg()]);
