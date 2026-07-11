@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLingui } from "@lingui/react/macro";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -335,7 +335,6 @@ export function useTranscriptionWorkspace() {
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const [cancellingTaskId, setCancellingTaskId] = useState<string | null>(null);
   const runningTaskIdRef = useRef<string | null>(null);
-  const runningTaskAudioPathRef = useRef<string | null>(null);
   const cancellingTaskIdRef = useRef<string | null>(null);
   const openTaskDialogRef = useRef<(paths: string[]) => void>(() => {});
   const downloadSpeedMovingAverageRef =
@@ -402,7 +401,6 @@ export function useTranscriptionWorkspace() {
 
   const runQueuedTask = useCallback(async (task: TranscriptionTask) => {
     runningTaskIdRef.current = task.id;
-    runningTaskAudioPathRef.current = task.audioPath;
     setTranscriptionProgress(null);
     setTasks((current) =>
       current.map((item) =>
@@ -422,6 +420,36 @@ export function useTranscriptionWorkspace() {
     );
 
     try {
+      const onProgress = new Channel<TranscriptionProgress>();
+      onProgress.onmessage = (progress) => {
+        if (runningTaskIdRef.current !== task.id) return;
+
+        const progressUpdatedAt = Date.now();
+        setTranscriptionProgress((previous) => ({
+          ...progress,
+          partialSegments:
+            progress.partialSegments ?? previous?.partialSegments ?? null,
+        }));
+        setTasks((current) =>
+          current.map((item) => {
+            if (item.id !== task.id) return item;
+
+            const nextProgress = {
+              ...progress,
+              partialSegments:
+                progress.partialSegments ??
+                item.progress?.partialSegments ??
+                null,
+            };
+            return {
+              ...item,
+              progress: nextProgress,
+              progressUpdatedAt,
+            };
+          }),
+        );
+      };
+
       // A queued task owns the worker until its complete command response arrives.
       // The batch command intentionally runs ASR for later files before it finalizes
       // the current file, which does not match the task queue's end-to-end ordering.
@@ -431,6 +459,7 @@ export function useTranscriptionWorkspace() {
           audioPath: task.audioPath,
           options: buildOptionsPayload(task),
         },
+        onProgress,
       });
 
       setTasks((current) =>
@@ -493,7 +522,6 @@ export function useTranscriptionWorkspace() {
       }
     } finally {
       runningTaskIdRef.current = null;
-      runningTaskAudioPathRef.current = null;
       if (cancellingTaskIdRef.current === task.id) {
         cancellingTaskIdRef.current = null;
         setCancellingTaskId(null);
@@ -518,29 +546,6 @@ export function useTranscriptionWorkspace() {
         if (event.payload.state === "complete") {
           setIsDownloading(false);
           refreshModels();
-        }
-      }),
-      listen<TranscriptionProgress>("transcription-progress", (event) => {
-        const progressPath =
-          event.payload.audioPath ?? event.payload.currentFile ?? null;
-        const runningTaskId = runningTaskIdRef.current;
-        const belongsToRunningTask =
-          runningTaskId !== null &&
-          (!progressPath || runningTaskAudioPathRef.current === progressPath);
-
-        if (!belongsToRunningTask) return;
-
-        const progressUpdatedAt = Date.now();
-
-        setTranscriptionProgress(event.payload);
-        if (event.payload.state !== "error") {
-          setTasks((current) =>
-            current.map((task) =>
-              task.id === runningTaskId
-                ? { ...task, progress: event.payload, progressUpdatedAt }
-                : task,
-            ),
-          );
         }
       }),
     ]);

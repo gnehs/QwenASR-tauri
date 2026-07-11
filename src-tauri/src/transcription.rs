@@ -9,11 +9,14 @@ use std::time::Instant;
 
 use opencc_rs::{Config, OpenCC};
 use qwen3_asr::{
-    inference::{AsrInference, InferenceTimings, TranscribeResult as QwenTranscribeResult},
+    inference::{
+        AsrInference, InferenceTimings, StreamingControl, StreamingStatus,
+        TranscribeResult as QwenTranscribeResult,
+    },
     tensor::Device,
 };
 use serde::Serialize;
-use tauri::{AppHandle, Emitter};
+use tauri::{ipc::Channel, AppHandle, Emitter};
 
 use crate::audio;
 use crate::error::{AppError, AppResult};
@@ -48,6 +51,7 @@ const TRANSCRIBE_PHASE_END_WITHOUT_ALIGNMENT: f64 = 1.0;
 const ALIGN_PHASE_START: f64 = TRANSCRIBE_PHASE_END_WITH_ALIGNMENT;
 const ALIGN_PHASE_END: f64 = 1.0;
 const ASR_CHUNK_OVERHEAD_MS: u64 = 500;
+const STREAM_UPDATE_INTERVAL_MS: u128 = 75;
 static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
 const ASR_LANGUAGES: &[&str] = &[
     "Chinese",
@@ -106,6 +110,30 @@ const ASR_LANGUAGES: &[&str] = &[
 
 pub type CancellationToken = Arc<AtomicBool>;
 
+trait ProgressEmitter {
+    fn send(&self, progress: TranscriptionProgress);
+
+    fn streams_partial_transcript(&self) -> bool {
+        false
+    }
+}
+
+impl ProgressEmitter for AppHandle {
+    fn send(&self, progress: TranscriptionProgress) {
+        let _ = self.emit(TRANSCRIPTION_PROGRESS_EVENT, progress);
+    }
+}
+
+impl ProgressEmitter for Channel<TranscriptionProgress> {
+    fn send(&self, progress: TranscriptionProgress) {
+        let _ = Channel::send(self, progress);
+    }
+
+    fn streams_partial_transcript(&self) -> bool {
+        true
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct TranscriptionControl {
     active: Arc<Mutex<HashMap<String, CancellationToken>>>,
@@ -159,7 +187,7 @@ fn check_cancelled(cancel: &CancellationToken) -> AppResult<()> {
 }
 
 pub fn transcribe_file(
-    app: AppHandle,
+    app: Channel<TranscriptionProgress>,
     request: TranscribeFileRequest,
     cancel: CancellationToken,
 ) -> AppResult<TranscriptionResult> {
@@ -204,7 +232,7 @@ pub fn transcribe_file(
 }
 
 fn transcribe_file_inner(
-    app: &AppHandle,
+    app: &dyn ProgressEmitter,
     started: Instant,
     request: TranscribeFileRequest,
     cancel: &CancellationToken,
@@ -549,7 +577,7 @@ pub fn transcribe_batch(
 
 #[allow(clippy::too_many_arguments)]
 fn emit_progress(
-    app: &AppHandle,
+    app: &dyn ProgressEmitter,
     started: Instant,
     state: &str,
     phase: &str,
@@ -592,7 +620,7 @@ struct ProgressMetrics {
 
 #[allow(clippy::too_many_arguments)]
 fn emit_progress_with_metrics(
-    app: &AppHandle,
+    app: &dyn ProgressEmitter,
     started: Instant,
     state: &str,
     phase: &str,
@@ -613,35 +641,32 @@ fn emit_progress_with_metrics(
         _ => eta_ms,
     };
 
-    let _ = app.emit(
-        TRANSCRIPTION_PROGRESS_EVENT,
-        TranscriptionProgress {
-            state: state.to_string(),
-            phase: phase.to_string(),
-            message: message.to_string(),
-            audio_path: audio_path.map(str::to_string),
-            current_file: current_file.map(str::to_string),
-            file_index,
-            total_files,
-            percent,
-            elapsed_ms: started.elapsed().as_millis(),
-            eta_ms,
-            chunk_index: metrics.chunk_index,
-            total_chunks: metrics.total_chunks,
-            chunk_start_ms: metrics.chunk_start_ms,
-            chunk_end_ms: metrics.chunk_end_ms,
-            processed_audio_ms: metrics.processed_audio_ms,
-            total_speech_ms: metrics.total_speech_ms,
-            skipped_silence_ms: metrics.skipped_silence_ms,
-            partial_segments: metrics.partial_segments,
-            timings: metrics.timings,
-        },
-    );
+    app.send(TranscriptionProgress {
+        state: state.to_string(),
+        phase: phase.to_string(),
+        message: message.to_string(),
+        audio_path: audio_path.map(str::to_string),
+        current_file: current_file.map(str::to_string),
+        file_index,
+        total_files,
+        percent,
+        elapsed_ms: started.elapsed().as_millis(),
+        eta_ms,
+        chunk_index: metrics.chunk_index,
+        total_chunks: metrics.total_chunks,
+        chunk_start_ms: metrics.chunk_start_ms,
+        chunk_end_ms: metrics.chunk_end_ms,
+        processed_audio_ms: metrics.processed_audio_ms,
+        total_speech_ms: metrics.total_speech_ms,
+        skipped_silence_ms: metrics.skipped_silence_ms,
+        partial_segments: metrics.partial_segments,
+        timings: metrics.timings,
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
 fn emit_chunk_progress(
-    app: &AppHandle,
+    app: &dyn ProgressEmitter,
     progress_started: Instant,
     audio_path: &str,
     file_index: usize,
@@ -748,7 +773,7 @@ fn load_forced_aligner(model_path: &Path, device: Device) -> AppResult<ForcedAli
 
 #[allow(clippy::too_many_arguments)]
 fn load_aligner_after_transcription(
-    app: &AppHandle,
+    app: &dyn ProgressEmitter,
     started: Instant,
     model_path: Option<&Path>,
     device: Device,
@@ -825,7 +850,7 @@ fn default_device() -> Device {
 
 #[allow(clippy::too_many_arguments)]
 fn transcribe_with_context(
-    app: &AppHandle,
+    app: &dyn ProgressEmitter,
     progress_started: Instant,
     engine: &AsrInference,
     audio_path: &str,
@@ -990,17 +1015,110 @@ fn transcribe_with_context(
         let asr_chunk_started = Instant::now();
         let chunk_samples = normalized_samples[chunk.start_sample..chunk.end_sample].to_vec();
         let chunk_samples_f32 = normalized_i16_to_f32(&chunk_samples);
-        let raw_result = engine
-            .transcribe_samples_with_context(
-                &chunk_samples_f32,
-                &options.context,
-                asr_language.as_deref(),
-            )
-            .map_err(|error| {
-                AppError::Transcription(format!(
-                    "Qwen3-ASR failed to transcribe chunk {chunk_index}/{total_chunks}: {error}"
-                ))
-            })?;
+        let raw_result = if app.streams_partial_transcript() {
+            let mut last_streamed_source_text = String::new();
+            let mut last_stream_emit = None::<Instant>;
+            let mut stream_error = None;
+            let streaming_result = engine
+                .transcribe_samples_with_context_streaming(
+                    &chunk_samples_f32,
+                    &options.context,
+                    asr_language.as_deref(),
+                    |partial| {
+                        if cancel.load(Ordering::Acquire) {
+                            return StreamingControl::Stop;
+                        }
+
+                        let partial_text = if language_forced {
+                            partial.text.trim()
+                        } else if let Some(text) = parse_auto_asr_text(&partial.raw_output) {
+                            text
+                        } else {
+                            return StreamingControl::Continue;
+                        };
+                        let partial_text = collapse_spaced_acronyms(partial_text);
+                        if partial_text.trim().is_empty()
+                            || partial_text == last_streamed_source_text
+                        {
+                            return StreamingControl::Continue;
+                        }
+                        if last_stream_emit.is_some_and(|last| {
+                            last.elapsed().as_millis() < STREAM_UPDATE_INTERVAL_MS
+                        }) {
+                            return StreamingControl::Continue;
+                        }
+
+                        let source_text = partial_text.clone();
+                        let partial_text = match convert_text_for_output_language(
+                            partial_text,
+                            output_language.as_deref(),
+                        ) {
+                            Ok(text) => text,
+                            Err(error) => {
+                                stream_error = Some(error);
+                                return StreamingControl::Stop;
+                            }
+                        };
+                        let partial_segments = build_streaming_partial_segments(
+                            &vad_estimated_segments,
+                            &partial_text,
+                            *chunk,
+                            options.segment_by_punctuation,
+                        );
+                        emit_chunk_progress(
+                            app,
+                            progress_started,
+                            audio_path,
+                            file_index,
+                            total_files,
+                            chunk_index,
+                            total_chunks,
+                            *chunk,
+                            processed_audio_ms,
+                            total_chunk_audio_ms,
+                            skipped_silence_ms,
+                            before_percent,
+                            before_eta_ms.map(|eta_ms| {
+                                eta_ms.saturating_sub(asr_chunk_started.elapsed().as_millis())
+                            }),
+                            "transcribingSegments",
+                            &format!("轉錄第 {chunk_index} / {total_chunks} 個有聲片段"),
+                            Some(partial_segments),
+                            Some(timings.clone()),
+                        );
+                        last_streamed_source_text = source_text;
+                        last_stream_emit = Some(Instant::now());
+                        StreamingControl::Continue
+                    },
+                )
+                .map_err(|error| {
+                    AppError::Transcription(format!(
+                        "Qwen3-ASR failed to transcribe chunk {chunk_index}/{total_chunks}: {error}"
+                    ))
+                })?;
+            if let Some(error) = stream_error {
+                return Err(error);
+            }
+            if streaming_result.status == StreamingStatus::StoppedByCallback {
+                check_cancelled(cancel)?;
+                return Err(AppError::Transcription(format!(
+                    "Qwen3-ASR streaming stopped unexpectedly on chunk {chunk_index}/{total_chunks}."
+                )));
+            }
+            streaming_result.transcription
+        } else {
+            engine
+                .transcribe_samples_with_context(
+                    &chunk_samples_f32,
+                    &options.context,
+                    asr_language.as_deref(),
+                )
+                .map_err(|error| {
+                    AppError::Transcription(format!(
+                        "Qwen3-ASR failed to transcribe chunk {chunk_index}/{total_chunks}: {error}"
+                    ))
+                })?
+        };
         check_cancelled(cancel)?;
         let asr_chunk_elapsed_ms = asr_chunk_started.elapsed().as_millis();
         timings.asr_ms = timings.asr_ms.saturating_add(asr_chunk_elapsed_ms);
@@ -1106,7 +1224,7 @@ fn transcribe_with_context(
 }
 
 fn finalize_transcription_with_context(
-    app: &AppHandle,
+    app: &dyn ProgressEmitter,
     progress_started: Instant,
     aligner: Option<&ForcedAlignerInference>,
     mut pending: PendingTranscription,
@@ -1567,6 +1685,24 @@ fn collapse_spaced_acronyms(text: &str) -> String {
 #[cfg(test)]
 fn build_approximate_segments(text: &str, audio_ms: u64) -> Vec<TranscriptSegment> {
     build_approximate_segments_with_offset(text, audio_ms, 0, true)
+}
+
+fn build_streaming_partial_segments(
+    completed_segments: &[TranscriptSegment],
+    partial_text: &str,
+    chunk: AudioRange,
+    segment_by_punctuation: bool,
+) -> Vec<TranscriptSegment> {
+    let mut segments = completed_segments.to_vec();
+    if !partial_text.trim().is_empty() {
+        segments.extend(build_approximate_segments_with_offset(
+            partial_text,
+            chunk.duration_ms(),
+            chunk.start_ms(),
+            segment_by_punctuation,
+        ));
+    }
+    segments
 }
 
 fn build_approximate_segments_with_offset(
@@ -2156,6 +2292,26 @@ mod tests {
         assert_eq!(segments.first().map(|segment| segment.end_ms), Some(1_000));
         assert_eq!(segments.last().map(|segment| segment.start_ms), Some(2_500));
         assert_eq!(segments.last().map(|segment| segment.end_ms), Some(4_000));
+    }
+
+    #[test]
+    fn streaming_partial_segments_replace_only_the_active_chunk() {
+        let completed = vec![TranscriptSegment {
+            start_ms: 0,
+            end_ms: 1_000,
+            text: "上一段。".into(),
+        }];
+        let chunk = AudioRange::new(
+            audio::ASR_SAMPLE_RATE as usize * 2,
+            audio::ASR_SAMPLE_RATE as usize * 5,
+        );
+
+        let segments = build_streaming_partial_segments(&completed, "正在串流。", chunk, true);
+
+        assert_eq!(segments[0].text, "上一段。");
+        assert_eq!(segments[1].text, "正在串流。");
+        assert_eq!(segments[1].start_ms, 2_000);
+        assert_eq!(segments[1].end_ms, 5_000);
     }
 
     #[test]

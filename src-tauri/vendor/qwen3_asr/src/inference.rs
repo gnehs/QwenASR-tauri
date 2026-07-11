@@ -136,6 +136,42 @@ impl AsrInference {
         context: &str,
         language: Option<&str>,
     ) -> Result<TranscribeResult> {
+        Ok(self
+            .transcribe_samples_with_context_impl::<fn(&PartialTranscription) -> StreamingControl>(
+                samples, context, language, None,
+            )?
+            .transcription)
+    }
+
+    /// Transcribe decoded mono audio samples while reporting each generated token.
+    ///
+    /// The callback receives a cumulative, parsed transcription snapshot after
+    /// every non-EOS token. Returning [`StreamingControl::Stop`] prevents the
+    /// next decoder step from starting. Callers must inspect [`StreamingStatus`]
+    /// to distinguish a callback stop from a normally completed transcription.
+    pub fn transcribe_samples_with_context_streaming<F>(
+        &self,
+        samples: &[f32],
+        context: &str,
+        language: Option<&str>,
+        on_partial: F,
+    ) -> Result<StreamingTranscribeResult>
+    where
+        F: FnMut(&PartialTranscription) -> StreamingControl,
+    {
+        self.transcribe_samples_with_context_impl(samples, context, language, Some(on_partial))
+    }
+
+    fn transcribe_samples_with_context_impl<F>(
+        &self,
+        samples: &[f32],
+        context: &str,
+        language: Option<&str>,
+        mut on_partial: Option<F>,
+    ) -> Result<StreamingTranscribeResult>
+    where
+        F: FnMut(&PartialTranscription) -> StreamingControl,
+    {
         let inference_started = Instant::now();
         let mut timings = InferenceTimings::default();
 
@@ -224,6 +260,7 @@ impl AsrInference {
         let decode_started = Instant::now();
         let mut generated_ids: Vec<i64> = Vec::with_capacity(MAX_NEW_TOKENS);
         let eos_token_ids = [ENDOFTEXT_TOKEN_ID, IM_END_TOKEN_ID];
+        let mut streaming_status = StreamingStatus::Completed;
 
         let mut next_logits = logits.narrow(1, seq_len as i64 - 1, 1).squeeze_dim(1);
 
@@ -239,6 +276,21 @@ impl AsrInference {
             }
 
             generated_ids.push(next_token);
+
+            if let Some(on_partial) = on_partial.as_mut() {
+                let raw_text = self.tokenizer.decode(&generated_ids)?;
+                if dispatch_partial(
+                    &raw_text,
+                    language.is_some(),
+                    next_token,
+                    generated_ids.len(),
+                    on_partial,
+                ) == StreamingControl::Stop
+                {
+                    streaming_status = StreamingStatus::StoppedByCallback;
+                    break;
+                }
+            }
 
             let next_hidden = self.text_decoder.embed(&next_token_tensor).unsqueeze(0);
 
@@ -270,12 +322,15 @@ impl AsrInference {
         timings.generated_tokens = generated_ids.len();
         timings.total_ms = inference_started.elapsed().as_millis();
 
-        Ok(TranscribeResult {
-            text: transcription,
-            language: language_detected,
-            raw_output: raw_text,
-            duration_seconds,
-            timings,
+        Ok(StreamingTranscribeResult {
+            transcription: TranscribeResult {
+                text: transcription,
+                language: language_detected,
+                raw_output: raw_text,
+                duration_seconds,
+                timings,
+            },
+            status: streaming_status,
         })
     }
 
@@ -338,6 +393,56 @@ pub struct TranscribeResult {
     pub timings: InferenceTimings,
 }
 
+/// Control returned by a streaming transcription callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamingControl {
+    Continue,
+    Stop,
+}
+
+/// Indicates whether decoding completed normally or was stopped by a callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StreamingStatus {
+    Completed,
+    StoppedByCallback,
+}
+
+/// Cumulative parsed transcription emitted after a generated token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PartialTranscription {
+    pub text: String,
+    pub language: String,
+    pub raw_output: String,
+    pub latest_token_id: i64,
+    pub generated_tokens: usize,
+}
+
+/// Result of a streaming transcription, including its termination status.
+pub struct StreamingTranscribeResult {
+    pub transcription: TranscribeResult,
+    pub status: StreamingStatus,
+}
+
+fn dispatch_partial<F>(
+    raw_output: &str,
+    language_forced: bool,
+    latest_token_id: i64,
+    generated_tokens: usize,
+    on_partial: &mut F,
+) -> StreamingControl
+where
+    F: FnMut(&PartialTranscription) -> StreamingControl,
+{
+    let (language, text) = parse_asr_output(raw_output, language_forced);
+    on_partial(&PartialTranscription {
+        text,
+        language,
+        raw_output: raw_output.to_string(),
+        latest_token_id,
+        generated_tokens,
+    })
+}
+
 fn parse_asr_output(raw: &str, language_forced: bool) -> (String, String) {
     if language_forced {
         return ("forced".to_string(), raw.trim().to_string());
@@ -374,5 +479,69 @@ fn capitalize_first(s: &str) -> String {
     match chars.next() {
         None => String::new(),
         Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dispatch_partial_emits_cumulative_parsed_snapshots_and_stops() {
+        let mut snapshots = Vec::new();
+        let mut callback = |partial: &PartialTranscription| {
+            snapshots.push(partial.clone());
+            if partial.generated_tokens == 2 {
+                StreamingControl::Stop
+            } else {
+                StreamingControl::Continue
+            }
+        };
+
+        assert_eq!(
+            dispatch_partial(
+                "language English<asr_text>Hello",
+                false,
+                101,
+                1,
+                &mut callback,
+            ),
+            StreamingControl::Continue
+        );
+        assert_eq!(
+            dispatch_partial(
+                "language English<asr_text>Hello world",
+                false,
+                202,
+                2,
+                &mut callback,
+            ),
+            StreamingControl::Stop
+        );
+
+        assert_eq!(snapshots.len(), 2);
+        assert_eq!(snapshots[0].language, "English");
+        assert_eq!(snapshots[0].text, "Hello");
+        assert_eq!(snapshots[0].latest_token_id, 101);
+        assert_eq!(snapshots[1].text, "Hello world");
+        assert_eq!(
+            snapshots[1].raw_output,
+            "language English<asr_text>Hello world"
+        );
+    }
+
+    #[test]
+    fn dispatch_partial_marks_forced_language_without_stripping_text() {
+        let mut snapshot = None;
+        let control = dispatch_partial(" hello ", true, 42, 1, &mut |partial| {
+            snapshot = Some(partial.clone());
+            StreamingControl::Continue
+        });
+
+        assert_eq!(control, StreamingControl::Continue);
+        let snapshot = snapshot.expect("callback should receive a snapshot");
+        assert_eq!(snapshot.language, "forced");
+        assert_eq!(snapshot.text, "hello");
+        assert_eq!(snapshot.generated_tokens, 1);
     }
 }

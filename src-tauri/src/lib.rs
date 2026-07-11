@@ -12,7 +12,7 @@ use error::AppResult;
 use models::{
     FfmpegStatus, ModelStatus, TranscribeBatchRequest, TranscribeFileRequest, TranscriptionResult,
 };
-use tauri::{AppHandle, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{ipc::Channel, AppHandle, State, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
 use tauri::{LogicalPosition, TitleBarStyle};
@@ -46,14 +46,14 @@ async fn delete_model(model_id: String) -> AppResult<ModelStatus> {
 
 #[tauri::command]
 async fn transcribe_file(
-    app: AppHandle,
     control: State<'_, transcription::TranscriptionControl>,
     request: TranscribeFileRequest,
+    on_progress: Channel<models::TranscriptionProgress>,
 ) -> AppResult<TranscriptionResult> {
     let task_id = request.task_id.clone();
     let cancel = control.register(&task_id)?;
     let result = tauri::async_runtime::spawn_blocking(move || {
-        transcription::transcribe_file(app, request, cancel)
+        transcription::transcribe_file(on_progress, request, cancel)
     })
     .await
     .map_err(|error| error::AppError::Transcription(error.to_string()));

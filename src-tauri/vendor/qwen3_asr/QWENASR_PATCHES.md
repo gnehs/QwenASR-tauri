@@ -12,3 +12,11 @@ an empty RoPE slice and terminates while reshaping the decoder output.
 QwenASR Studio uses Qwen's Transformers default of 512 generated tokens and
 derives the position-table capacity from the same constant. This is sufficient
 for the app's bounded 30-second audio chunks and prevents runaway repetition.
+
+## Streaming decode callback
+
+Upstream returns text only after the autoregressive decode loop finishes.
+QwenASR Studio adds a backward-compatible streaming samples API that reports a
+cumulative parsed transcript after each generated token. Its callback can stop
+before the next decoder step, which lets the desktop app stream partial text and
+cancel an active chunk without changing the final transcription API.
