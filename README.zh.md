@@ -24,14 +24,20 @@ brew install ffmpeg
 
 ## 取得 QwenASR Studio
 
-你可以下載 GitHub Actions 自動建置的最新版程式，這不是正式 Release；每次建置檔只保留 14 天，請選擇最新且顯示成功的建置。
+你可以直接到 GitHub Releases 下載最新正式版：
 
-1. 前往本專案的 [Actions 頁面](https://github.com/gnehs/QwenASR-tauri/actions)。
-2. 在左側選擇 **Build**，再點選最新一筆有綠色勾勾的執行紀錄。
-3. 捲到頁面底部的 **Artifacts**，下載 `qwenasr-studio-macos-arm64-app`。
-4. 解壓縮下載的 ZIP 檔，把裡面的 `QwenASR Studio.app` 拖到「應用程式」資料夾，然後開啟它。
+1. 前往本專案的 [Releases 頁面](https://github.com/gnehs/QwenASR-tauri/releases/latest)。
+2. 下載最新版中的 `qwenasr-studio-macos-arm64-app.dmg`。
+3. 開啟 DMG，將裡面的 `QwenASR Studio.app` 拖到「應用程式」資料夾，然後開啟它。
+4. 如果第一次開啟被系統擋住，請在終端機執行：
 
-若沒有可用的成功建置，才需要從原始碼執行；請參考 [CONTRIBUTING.md](CONTRIBUTING.md#從-github-下載原始碼)。
+```bash
+xattr -cr "/Applications/QwenASR Studio.app"
+```
+
+再重新開啟程式。
+
+如果你想自行編譯，可參考 [CONTRIBUTING.md](CONTRIBUTING.md) 進行原始碼建置。
 
 ## 第一次轉錄
 

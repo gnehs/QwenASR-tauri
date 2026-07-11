@@ -26,14 +26,20 @@ After installation, restart QwenASR Studio and check FFmpeg status in **Settings
 
 ## Get QwenASR Studio
 
-You can download the latest build from GitHub Actions. This is not an official release; artifacts are kept only for 14 days, so always use the latest successful build.
+Download the latest release from GitHub Releases and install it directly:
 
-1. Open this repository's [Actions page](https://github.com/gnehs/QwenASR-tauri/actions).
-2. Select **Build** and open the most recent successful workflow run.
-3. In **Artifacts**, download `qwenasr-studio-macos-arm64-app`.
-4. Unzip the archive, then drag `QwenASR Studio.app` into your Applications folder and open it.
+1. Open this repository's [Releases page](https://github.com/gnehs/QwenASR-tauri/releases/latest).
+2. Download `qwenasr-studio-macos-arm64-app.dmg` from the latest release assets.
+3. Open the DMG and drag `QwenASR Studio.app` into your Applications folder, then open it.
+4. If macOS blocks first launch, open Terminal and run:
 
-If no successful artifact is available, run from source instead. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
+```bash
+xattr -cr "/Applications/QwenASR Studio.app"
+```
+
+Then reopen the app.
+
+If you want to build the app yourself, see [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
 
 ## First transcription
 
