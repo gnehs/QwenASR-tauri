@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Trans } from "@lingui/react/macro";
 
 import { Badge } from "@/components/ui/badge";
 import type { FfmpegStatus } from "@/types/transcription";
@@ -44,7 +45,7 @@ export function AppToolbar({
         <div className="window-toolbar-actions">
           <div className="window-toolbar-primary-actions">{actions}</div>
           {!ffmpeg.available ? (
-            <Badge variant="destructive">缺少 FFmpeg</Badge>
+            <Badge variant="destructive"><Trans>缺少 FFmpeg</Trans></Badge>
           ) : null}
         </div>
       ) : null}

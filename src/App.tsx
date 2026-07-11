@@ -4,6 +4,7 @@ import {
   Settings2Icon,
   Trash2Icon,
 } from "lucide-react";
+import { Trans } from "@lingui/react/macro";
 import { Toaster } from "sonner";
 
 import { AppToolbar } from "@/components/app/AppToolbar";
@@ -43,8 +44,8 @@ function App() {
                 <div className="file-drop-overlay-icon">
                   <FileUpIcon />
                 </div>
-                <strong>把檔案拖到這裡</strong>
-                <span>放開即可建立轉錄任務</span>
+                <strong><Trans>把檔案拖到這裡</Trans></strong>
+                <span><Trans>放開即可建立轉錄任務</Trans></span>
               </div>
             </div>
           ) : null}
@@ -60,12 +61,12 @@ function App() {
                     onClick={workspace.clearFinishedTasks}
                   >
                     <Trash2Icon data-icon="inline-start" />
-                    清除已完成
+                    <Trans>清除已完成</Trans>
                   </Button>
                 ) : null}
                 <Button size="sm" onClick={workspace.pickFilesForTasks}>
                   <ListPlusIcon data-icon="inline-start" />
-                  新增任務
+                  <Trans>新增任務</Trans>
                 </Button>
               </>
             ) : undefined}
@@ -77,15 +78,15 @@ function App() {
                   }
                 >
                   <Settings2Icon data-icon="inline-start" />
-                  設定
+                  <Trans>設定</Trans>
                 </SheetTrigger>
                 <SheetContent
                   side="right"
                   className="settings-sheet data-[side=right]:w-[min(560px,100vw)] data-[side=right]:sm:max-w-[min(560px,100vw)]"
                 >
                   <SheetHeader>
-                    <SheetTitle>設定</SheetTitle>
-                    <SheetDescription>管理模型與相關工具。</SheetDescription>
+                    <SheetTitle><Trans>設定</Trans></SheetTitle>
+                    <SheetDescription><Trans>管理模型與相關工具。</Trans></SheetDescription>
                   </SheetHeader>
                   <div className="settings-sheet-body scroll-fade">
                     <SettingsPanel

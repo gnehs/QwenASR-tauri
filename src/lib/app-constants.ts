@@ -1,3 +1,6 @@
+import type { MessageDescriptor } from "@lingui/core";
+import { msg } from "@lingui/core/macro";
+
 import type { OptionsState, SelectOption } from "@/types/transcription";
 
 export const languageItems: SelectOption[] = [
@@ -62,6 +65,121 @@ export const languageItems: SelectOption[] = [
   { label: "吳語 / Wu language", value: "Wu language" },
   { label: "閩南語 / Minnan language", value: "Minnan language" },
 ];
+
+export const languageLabelMessages: Record<string, MessageDescriptor> = {
+  auto: msg`自動偵測`,
+  Chinese: msg`繁體中文 / Chinese`,
+  "Chinese (Simplified)": msg`簡體中文 / Simplified Chinese`,
+  English: msg`English`,
+  Cantonese: msg`粵語 / Cantonese`,
+  Arabic: msg`阿拉伯文 / Arabic`,
+  German: msg`德文 / German`,
+  French: msg`法文 / French`,
+  Spanish: msg`西班牙文 / Spanish`,
+  Portuguese: msg`葡萄牙文 / Portuguese`,
+  Indonesian: msg`印尼文 / Indonesian`,
+  Italian: msg`義大利文 / Italian`,
+  Korean: msg`韓文 / Korean`,
+  Russian: msg`俄文 / Russian`,
+  Thai: msg`泰文 / Thai`,
+  Vietnamese: msg`越南文 / Vietnamese`,
+  Japanese: msg`日文 / Japanese`,
+  Turkish: msg`土耳其文 / Turkish`,
+  Hindi: msg`印地文 / Hindi`,
+  Malay: msg`馬來文 / Malay`,
+  Dutch: msg`荷蘭文 / Dutch`,
+  Swedish: msg`瑞典文 / Swedish`,
+  Danish: msg`丹麥文 / Danish`,
+  Finnish: msg`芬蘭文 / Finnish`,
+  Polish: msg`波蘭文 / Polish`,
+  Czech: msg`捷克文 / Czech`,
+  Filipino: msg`菲律賓文 / Filipino`,
+  Persian: msg`波斯文 / Persian`,
+  Greek: msg`希臘文 / Greek`,
+  Hungarian: msg`匈牙利文 / Hungarian`,
+  Macedonian: msg`馬其頓文 / Macedonian`,
+  Romanian: msg`羅馬尼亞文 / Romanian`,
+  Anhui: msg`安徽方言 / Anhui`,
+  Dongbei: msg`東北方言 / Dongbei`,
+  Fujian: msg`福建方言 / Fujian`,
+  Gansu: msg`甘肅方言 / Gansu`,
+  Guizhou: msg`貴州方言 / Guizhou`,
+  Hebei: msg`河北方言 / Hebei`,
+  Henan: msg`河南方言 / Henan`,
+  Hubei: msg`湖北方言 / Hubei`,
+  Hunan: msg`湖南方言 / Hunan`,
+  Jiangxi: msg`江西方言 / Jiangxi`,
+  Ningxia: msg`寧夏方言 / Ningxia`,
+  Shandong: msg`山東方言 / Shandong`,
+  Shaanxi: msg`陝西方言 / Shaanxi`,
+  Shanxi: msg`山西方言 / Shanxi`,
+  Sichuan: msg`四川方言 / Sichuan`,
+  Tianjin: msg`天津方言 / Tianjin`,
+  Yunnan: msg`雲南方言 / Yunnan`,
+  Zhejiang: msg`浙江方言 / Zhejiang`,
+  "Cantonese (Hong Kong accent)": msg`粵語（香港口音） / Cantonese (Hong Kong accent)`,
+  "Cantonese (Guangdong accent)": msg`粵語（廣東口音） / Cantonese (Guangdong accent)`,
+  "Wu language": msg`吳語 / Wu language`,
+  "Minnan language": msg`閩南語 / Minnan language`,
+};
+
+const dialectLanguageValues = new Set([
+  "Anhui",
+  "Dongbei",
+  "Fujian",
+  "Gansu",
+  "Guizhou",
+  "Hebei",
+  "Henan",
+  "Hubei",
+  "Hunan",
+  "Jiangxi",
+  "Ningxia",
+  "Shandong",
+  "Shaanxi",
+  "Shanxi",
+  "Sichuan",
+  "Tianjin",
+  "Yunnan",
+  "Zhejiang",
+  "Cantonese (Hong Kong accent)",
+  "Cantonese (Guangdong accent)",
+  "Wu language",
+  "Minnan language",
+]);
+
+const languageCategoryMessages = {
+  major: msg`主要語言`,
+  dialect: msg`方言`,
+};
+
+export function localizeLanguageItems(
+  translate: (message: MessageDescriptor) => string,
+): SelectOption[] {
+  return languageItems.map((item) => {
+    const message = languageLabelMessages[item.value];
+    return message ? { ...item, label: translate(message) } : item;
+  });
+}
+
+export function localizeLanguageGroups(
+  translate: (message: MessageDescriptor) => string,
+) {
+  const items = localizeLanguageItems(translate);
+
+  return [
+    {
+      id: "major",
+      label: translate(languageCategoryMessages.major),
+      items: items.filter((item) => !dialectLanguageValues.has(item.value)),
+    },
+    {
+      id: "dialect",
+      label: translate(languageCategoryMessages.dialect),
+      items: items.filter((item) => dialectLanguageValues.has(item.value)),
+    },
+  ] as const;
+}
 
 export const audioFilters = [
   {

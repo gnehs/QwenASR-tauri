@@ -2,6 +2,10 @@ name: Build
 
 on:
   push:
+    branches:
+      - '**'
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
   pull_request:
   workflow_dispatch:
 
@@ -17,7 +21,7 @@ env:
 
 jobs:
   build-macos:
-    name: Build macOS app
+    name: Build macOS DMG
     # MLX v0.30.6 builds against metal-cpp 26 and requires the matching SDK.
     runs-on: macos-26
     timeout-minutes: 90
@@ -64,14 +68,50 @@ jobs:
         working-directory: src-tauri
         run: cargo test --locked
 
-      - name: Build Tauri app
-        run: pnpm tauri build --bundles app --ci --verbose
+      - name: Build Tauri DMG
+        run: pnpm tauri build --bundles dmg --ci --verbose
 
-      - name: Upload macOS bundle
+      - name: Upload macOS DMG
         uses: actions/upload-artifact@v7
         with:
-          name: qwenasr-studio-macos-arm64-app
-          path: src-tauri/target/release/bundle/macos/
+          name: qwenasr-studio-macos-arm64-dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+
+  publish-release:
+    name: Publish macOS release
+    if: github.ref_type == 'tag'
+    needs: build-macos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download macOS DMG
+        uses: actions/download-artifact@v5
+        with:
+          name: qwenasr-studio-macos-arm64-dmg
+          path: release-assets
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          release_notes=$'此版本為未簽名的 macOS 應用程式。\n\n若 macOS 阻擋開啟，請先將 App 拖曳至「應用程式」，再於終端機執行：\n\n    xattr -c "/Applications/QwenASR Studio.app"'
+
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber \
+              release-assets/*.dmg
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --title "QwenASR Studio ${GITHUB_REF_NAME}" \
+              --notes "$release_notes" \
+              --generate-notes \
+              release-assets/*.dmg
+          fi

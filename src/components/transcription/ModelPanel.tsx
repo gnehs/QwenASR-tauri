@@ -1,4 +1,7 @@
 import { useState } from "react";
+import { msg } from "@lingui/core/macro";
+import { useLingui as useLinguiRuntime } from "@lingui/react";
+import { Trans, useLingui as useLinguiMacro } from "@lingui/react/macro";
 import {
   DownloadIcon,
   HardDriveIcon,
@@ -43,15 +46,19 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format";
 import type { DownloadProgress, ModelStatus } from "@/types/transcription";
 
-const modelComparisonMeta: Record<string, string> = {
-  "qwen3-asr-0.6b": "速度：快 · 品質：標準",
-  "qwen3-asr-1.7b": "速度：較慢 · 品質：高",
-  "qwen3-forced-aligner-0.6b": "用途：產生精準字幕時間",
+const modelComparisonMessages = {
+  "qwen3-asr-0.6b": msg`速度：快 · 品質：標準`,
+  "qwen3-asr-1.7b": msg`速度：較慢 · 品質：高`,
+  "qwen3-forced-aligner-0.6b": msg`用途：產生精準字幕時間`,
 };
 
-function modelSizeLabel(sizeHint: string) {
-  return sizeHint.replace(/^~\s*/, "約 ");
-}
+const modelDescriptionMessages = {
+  "qwen3-asr-0.6b": msg`快速、適合大多數單次與批次轉錄工作。`,
+  "qwen3-asr-1.7b": msg`較高準確度，適合重要錄音或較複雜的聲學環境。`,
+  "qwen3-forced-aligner-0.6b": msg`對齊音訊與逐字稿，產生精準的字詞級字幕時間戳。`,
+};
+
+const approximateLabel = msg`約`;
 
 export function ModelPanel({
   models,
@@ -74,6 +81,8 @@ export function ModelPanel({
   onDeleteModel: (modelId: string) => Promise<boolean>;
   onRefresh: () => void;
 }) {
+  const { _ } = useLinguiRuntime();
+  const { t } = useLinguiMacro();
   const [deleteDialogModelId, setDeleteDialogModelId] = useState<string | null>(
     null,
   );
@@ -83,10 +92,10 @@ export function ModelPanel({
     <section className="settings-section" aria-labelledby="model-panel-title">
       <div className="settings-section-header">
         <h2 id="model-panel-title" className="settings-section-title">
-          模型
+          <Trans>模型</Trans>
         </h2>
         <p className="settings-section-description">
-          在這裡管理 QwenASR 模型。
+          <Trans>在這裡管理 QwenASR 模型。</Trans>
         </p>
       </div>
       <div className="settings-section-content">
@@ -96,22 +105,23 @@ export function ModelPanel({
               <EmptyMedia variant="icon">
                 <DownloadIcon />
               </EmptyMedia>
-              <EmptyTitle>尚未取得模型清單</EmptyTitle>
+              <EmptyTitle><Trans>尚未取得模型清單</Trans></EmptyTitle>
               <EmptyDescription>
-                請重新整理模型與工具狀態；在 Tauri app 內會從後端讀取支援模型。
+                <Trans>請重新整理模型與工具狀態；在 Tauri app 內會從後端讀取支援模型。</Trans>
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button variant="outline" onClick={onRefresh}>
                 <RefreshCwIcon data-icon="inline-start" />
-                重新整理
+                <Trans>重新整理</Trans>
               </Button>
             </EmptyContent>
           </Empty>
         ) : (
           <div className="model-list">
             {models.map((model) => {
-              const comparisonMeta = modelComparisonMeta[model.id];
+              const comparisonMessage = modelComparisonMessages[model.id as keyof typeof modelComparisonMessages];
+              const descriptionMessage = modelDescriptionMessages[model.id as keyof typeof modelDescriptionMessages];
               const activeDownloadProgress =
                 isDownloading && downloadProgress?.modelId === model.id
                   ? downloadProgress
@@ -131,18 +141,20 @@ export function ModelPanel({
                     <CardTitle className="model-card-title">
                       <span>{model.title}</span>
                       {model.recommended ? (
-                        <Badge variant="secondary">建議</Badge>
+                        <Badge variant="secondary"><Trans>建議</Trans></Badge>
                       ) : model.role === "forcedAlignment" ? (
-                        <Badge variant="outline">字幕對齊</Badge>
+                        <Badge variant="outline"><Trans>字幕對齊</Trans></Badge>
                       ) : null}
                     </CardTitle>
-                    <CardDescription>{model.description}</CardDescription>
+                    <CardDescription>
+                      {descriptionMessage ? _(descriptionMessage) : model.description}
+                    </CardDescription>
                   </CardHeader>
 
                   <CardContent className="model-card-content">
-                    {comparisonMeta ? (
+                    {comparisonMessage ? (
                       <p className="model-card-comparison">
-                        {comparisonMeta}
+                        {_(comparisonMessage)}
                       </p>
                     ) : null}
                   </CardContent>
@@ -152,12 +164,12 @@ export function ModelPanel({
                       <div className="model-card-meta">
                         <span className="model-card-meta-item">
                           <HardDriveIcon className="size-4" />
-                          下載大小{modelSizeLabel(model.sizeHint)}
+                          <Trans>下載大小{model.sizeHint.replace(/^~\s*/, `${_(approximateLabel)} `)}</Trans>
                         </span>
                         {isActiveDownload ? (
                           <span className="model-card-meta-item model-card-status">
                             <Spinner />
-                            下載中
+                            <Trans>下載中</Trans>
                           </span>
                         ) : null}
                       </div>
@@ -169,7 +181,7 @@ export function ModelPanel({
                           onClick={() => onDownload(model.id)}
                         >
                           <DownloadIcon data-icon="inline-start" />
-                          下載模型
+                          <Trans>下載模型</Trans>
                         </Button>
                       ) : null}
 
@@ -192,15 +204,15 @@ export function ModelPanel({
                             }
                           >
                             <Trash2Icon data-icon="inline-start" />
-                            移除
+                            <Trans>移除</Trans>
                           </DialogTrigger>
                           <DialogContent
                             showCloseButton={!isDeletingThisModel}
                           >
                             <DialogHeader>
-                              <DialogTitle>移除 {model.title}</DialogTitle>
+                              <DialogTitle><Trans>移除 {model.title}</Trans></DialogTitle>
                               <DialogDescription>
-                                這會移除已下載的模型檔案；之後需重新下載才能使用此模型。
+                                <Trans>這會移除已下載的模型檔案；之後需重新下載才能使用此模型。</Trans>
                               </DialogDescription>
                             </DialogHeader>
                             <DialogFooter>
@@ -208,7 +220,7 @@ export function ModelPanel({
                                 render={<Button variant="outline" />}
                                 disabled={isDeletingThisModel}
                               >
-                                取消
+                                <Trans>取消</Trans>
                               </DialogClose>
                               <Button
                                 variant="destructive"
@@ -225,7 +237,7 @@ export function ModelPanel({
                                 ) : (
                                   <Trash2Icon data-icon="inline-start" />
                                 )}
-                                移除模型
+                                <Trans>移除模型</Trans>
                               </Button>
                             </DialogFooter>
                           </DialogContent>
@@ -236,12 +248,12 @@ export function ModelPanel({
                     {isActiveDownload ? (
                       <div className="model-download-footer">
                         <Progress
-                          aria-label={`${model.title} 下載進度`}
+                          aria-label={t`${model.title} 下載進度`}
                           className="model-download-progress"
                           value={activeDownloadProgress.percent}
                         >
                           <ProgressLabel className="min-w-0 flex-1 truncate">
-                            正在下載模型檔案
+                            <Trans>正在下載模型檔案</Trans>
                           </ProgressLabel>
                           <ProgressValue className="shrink-0 text-foreground">
                             {() =>
@@ -251,11 +263,10 @@ export function ModelPanel({
                         </Progress>
                         <div className="model-download-meta">
                           <span className="truncate">
-                            {activeDownloadProgress.currentFile ?? "準備下載"}
+                            {activeDownloadProgress.currentFile ?? <Trans>準備下載</Trans>}
                           </span>
                           <span>
-                            {activeDownloadProgress.fileIndex}/
-                            {activeDownloadProgress.totalFiles} 個檔案
+                            <Trans>{activeDownloadProgress.fileIndex}/{activeDownloadProgress.totalFiles} 個檔案</Trans>
                           </span>
                           <span>
                             {formatBytes(

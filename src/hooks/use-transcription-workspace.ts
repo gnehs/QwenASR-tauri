@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLingui } from "@lingui/react/macro";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -241,6 +242,9 @@ function movingAverageDownloadSpeed(
 async function sendTaskNotification(
   task: TranscriptionTask,
   result: TranscriptionResult,
+  title: string,
+  completedMessage: string,
+  srtMessage: string,
 ) {
   try {
     let permissionGranted = await isPermissionGranted();
@@ -255,9 +259,9 @@ async function sendTaskNotification(
 
     if (permissionGranted) {
       sendNotification({
-        title: "轉錄完成",
-        body: `${basename(task.audioPath)} 已完成${
-          result.srtPath ? "，SRT 已輸出" : ""
+        title,
+        body: `${basename(task.audioPath)} ${completedMessage}${
+          result.srtPath ? srtMessage : ""
         }`,
       });
     }
@@ -267,6 +271,7 @@ async function sendTaskNotification(
 }
 
 export function useTranscriptionWorkspace() {
+  const { t } = useLingui();
   const [models, setModels] = useState<ModelStatus[]>([]);
   const [ffmpeg, setFfmpeg] = useState<FfmpegStatus>({
     available: false,
@@ -350,12 +355,12 @@ export function useTranscriptionWorkspace() {
       const rejectedCount = paths.length - acceptedPaths.length;
 
       if (acceptedPaths.length === 0) {
-        toast.error("沒有可加入的音訊或影片檔");
+        toast.error(t`沒有可加入的音訊或影片檔`);
         return;
       }
 
       if (rejectedCount > 0) {
-        toast.warning(`已略過 ${rejectedCount} 個不支援的檔案`);
+        toast.warning(t`已略過 ${rejectedCount} 個不支援的檔案`);
       }
 
       setTaskDraft({
@@ -366,7 +371,7 @@ export function useTranscriptionWorkspace() {
       });
       setTaskDialogOpen(true);
     },
-    [defaultModelId, options, outputDir],
+    [defaultModelId, options, outputDir, t],
   );
 
   const runQueuedTasks = useCallback(async (batch: TranscriptionTask[]) => {
@@ -412,7 +417,7 @@ export function useTranscriptionWorkspace() {
             });
 
       if (results.length !== batch.length) {
-        throw new Error("批次轉錄回傳的結果數量不一致");
+        throw new Error(t`批次轉錄回傳的結果數量不一致`);
       }
 
       const resultsByTaskId = new Map(
@@ -434,8 +439,14 @@ export function useTranscriptionWorkspace() {
         ),
       );
       for (const [index, task] of batch.entries()) {
-        toast.success(`${basename(task.audioPath)} 轉錄完成`);
-        void sendTaskNotification(task, results[index]);
+        toast.success(t`${basename(task.audioPath)} 轉錄完成`);
+        void sendTaskNotification(
+          task,
+          results[index],
+          t`轉錄完成`,
+          t`已完成`,
+          t`，SRT 已輸出`,
+        );
       }
     } catch (error) {
       const message = formatInvokeError(error);
@@ -454,8 +465,8 @@ export function useTranscriptionWorkspace() {
       );
       toast.error(
         batch.length === 1
-          ? `${basename(batch[0].audioPath)} 轉錄失敗`
-          : `${batch.length} 個轉錄任務失敗`,
+          ? t`${basename(batch[0].audioPath)} 轉錄失敗`
+          : t`${batch.length} 個轉錄任務失敗`,
         { description: message },
       );
     } finally {
@@ -463,7 +474,7 @@ export function useTranscriptionWorkspace() {
       runningTaskBatchRef.current = [];
       setTranscriptionProgress(null);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refreshRuntime();
@@ -661,7 +672,7 @@ export function useTranscriptionWorkspace() {
       );
       await refreshModels();
       setIsDownloading(false);
-      toast.success("模型已可使用");
+      toast.success(t`模型已可使用`);
       return downloadedModel;
     } catch (error) {
       setIsDownloading(false);
@@ -691,7 +702,7 @@ export function useTranscriptionWorkspace() {
     );
 
     if (modelInQueue) {
-      toast.error("模型正在任務佇列中使用");
+      toast.error(t`模型正在任務佇列中使用`);
       return false;
     }
 
@@ -713,7 +724,7 @@ export function useTranscriptionWorkspace() {
       setDownloadProgress(null);
       setDownloadMovingAverageSpeedBytesPerSec(0);
       downloadSpeedMovingAverageRef.current = null;
-      toast.success("模型已刪除");
+      toast.success(t`模型已刪除`);
       return true;
     } catch (error) {
       toast.error(formatInvokeError(error));
@@ -748,7 +759,7 @@ export function useTranscriptionWorkspace() {
         }
         if (needsForcedAligner && !forcedAligner?.installed) {
           if (!forcedAligner) {
-            throw new Error("找不到 Qwen3 ForcedAligner 模型設定");
+            throw new Error(t`找不到 Qwen3 ForcedAligner 模型設定`);
           }
           await downloadModel(forcedAligner.id);
         }
@@ -781,7 +792,7 @@ export function useTranscriptionWorkspace() {
       setOutputDir(taskDraft.outputDir);
       setTaskDialogOpen(false);
       setTaskModelDownloadDialogOpen(false);
-      toast.success(`已加入 ${nextTasks.length} 個轉錄任務`);
+      toast.success(t`已加入 ${nextTasks.length} 個轉錄任務`);
     } catch (error) {
       setTaskModelDownloadError(
         error instanceof Error ? error.message : formatInvokeError(error),
@@ -795,7 +806,7 @@ export function useTranscriptionWorkspace() {
   function removeTask(taskId: string) {
     const task = tasks.find((item) => item.id === taskId);
     if (task?.status === "running") {
-      toast.error("執行中的任務無法移除");
+      toast.error(t`執行中的任務無法移除`);
       return;
     }
 

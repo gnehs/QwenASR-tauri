@@ -12,6 +12,7 @@ dist
 dist-ssr
 *.local
 src-tauri/resources/mlx.metallib
+src/locales/**/messages.js
 
 # Editor directories and files
 .vscode/*

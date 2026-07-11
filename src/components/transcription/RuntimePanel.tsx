@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { Trans } from "@lingui/react/macro";
 import {
   Card,
   CardAction,
@@ -15,31 +16,31 @@ export function RuntimePanel({ ffmpeg }: { ffmpeg: FfmpegStatus }) {
     <section className="settings-section" aria-labelledby="runtime-panel-title">
       <div className="settings-section-header">
         <h2 id="runtime-panel-title" className="settings-section-title">
-          工具狀態
+          <Trans>工具狀態</Trans>
         </h2>
-        <p className="settings-section-description">將音訊轉換為支援的格式。</p>
+        <p className="settings-section-description"><Trans>將音訊轉換為支援的格式。</Trans></p>
       </div>
       <div className="settings-section-content">
         <Card size="sm">
           <CardHeader>
             <CardTitle>FFmpeg</CardTitle>
             <CardDescription className="truncate">
-              {ffmpeg.version ?? "未偵測到 ffmpeg"}
+              {ffmpeg.version ?? <Trans>未偵測到 ffmpeg</Trans>}
             </CardDescription>
             <CardAction>
               <Badge variant={ffmpeg.available ? "secondary" : "destructive"}>
-                {ffmpeg.available ? "可用" : "缺少"}
+                {ffmpeg.available ? <Trans>可用</Trans> : <Trans>缺少</Trans>}
               </Badge>
             </CardAction>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
             <Separator />
             <p className="text-sm text-muted-foreground">
-              非 WAV 音訊、影片檔或不符合 16 kHz mono 的 WAV 會透過 FFmpeg 正規化後再送入 QwenASR。
+              <Trans>非 WAV 音訊、影片檔或不符合 16 kHz mono 的 WAV 會透過 FFmpeg 正規化後再送入 QwenASR。</Trans>
             </p>
             {!ffmpeg.available ? (
               <div className="tool-install-hint">
-                <span>請在終端機安裝：</span>
+                <span><Trans>請在終端機安裝：</Trans></span>
                 <code>brew install ffmpeg</code>
               </div>
             ) : null}

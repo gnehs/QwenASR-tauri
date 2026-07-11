@@ -1,3 +1,7 @@
+import { msg } from "@lingui/core/macro";
+
+import { i18n } from "@/i18n";
+
 export function uniquePaths(paths: string[]) {
   return Array.from(new Set(paths));
 }
@@ -38,17 +42,17 @@ export function formatDuration(ms: number | null | undefined) {
   if (!Number.isFinite(ms) || ms == null || ms < 0) return "--";
 
   const totalSeconds = Math.max(0, Math.round(ms / 1000));
-  if (totalSeconds < 60) return `${totalSeconds} 秒`;
+  if (totalSeconds < 60) return i18n._(msg`${totalSeconds} 秒`);
 
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
   if (hours > 0) {
-    return `${hours} 小時 ${minutes} 分`;
+    return i18n._(msg`${hours} 小時 ${minutes} 分`);
   }
 
-  return `${minutes} 分 ${seconds.toString().padStart(2, "0")} 秒`;
+  return i18n._(msg`${minutes} 分 ${seconds.toString().padStart(2, "0")} 秒`);
 }
 
 export function formatTiming(ms: number | null | undefined) {
@@ -56,7 +60,8 @@ export function formatTiming(ms: number | null | undefined) {
   if (ms < 1000) return `${Math.round(ms)} ms`;
 
   const seconds = ms / 1000;
-  return `${seconds < 10 ? seconds.toFixed(2) : seconds.toFixed(1)} 秒`;
+  const formattedSeconds = seconds < 10 ? seconds.toFixed(2) : seconds.toFixed(1);
+  return i18n._(msg`${formattedSeconds} 秒`);
 }
 
 export function formatInvokeError(error: unknown) {
@@ -67,5 +72,5 @@ export function formatInvokeError(error: unknown) {
     return value.message ?? JSON.stringify(error);
   }
 
-  return "未知錯誤";
+  return i18n._(msg`未知錯誤`);
 }

@@ -1,22 +1,24 @@
 import { Progress } from "@/components/ui/progress";
+import { Trans, useLingui } from "@lingui/react/macro";
 import { formatDuration, formatTiming } from "@/lib/format";
 import type { TranscriptionProgress } from "@/types/transcription";
 
-const stages = ["準備", "分析", "轉錄", "整理"] as const;
-
-const phaseLabels: Record<string, string> = {
-  preparing: "準備處理音訊",
-  loadingModel: "載入模型",
-  loadingAudio: "讀取音訊",
-  analyzingAudio: "分析語音片段",
-  transcribing: "執行語音辨識",
-  transcribingSegments: "逐段轉錄",
-  aligningTimestamps: "校準時間軸",
-  writingSrt: "寫入字幕檔",
-  finalizing: "整理轉錄結果",
-  complete: "轉錄完成",
-  error: "轉錄失敗",
-};
+function phaseLabel(phase: string, t: ReturnType<typeof useLingui>["t"]) {
+  switch (phase) {
+    case "preparing": return t`準備處理音訊`;
+    case "loadingModel": return t`載入模型`;
+    case "loadingAudio": return t`讀取音訊`;
+    case "analyzingAudio": return t`分析語音片段`;
+    case "transcribing": return t`執行語音辨識`;
+    case "transcribingSegments": return t`逐段轉錄`;
+    case "aligningTimestamps": return t`校準時間軸`;
+    case "writingSrt": return t`寫入字幕檔`;
+    case "finalizing": return t`整理轉錄結果`;
+    case "complete": return t`轉錄完成`;
+    case "error": return t`轉錄失敗`;
+    default: return null;
+  }
+}
 
 function activeStageIndex(progress: TranscriptionProgress) {
   switch (progress.phase) {
@@ -46,9 +48,11 @@ export function TranscriptionProgressPanel({
   progress: TranscriptionProgress | null;
   progressUpdatedAt?: number | null;
 }) {
+  const { t } = useLingui();
   if (!progress) return null;
 
   const percent = Math.max(0, Math.min(100, progress.percent));
+  const stages = [t`準備`, t`分析`, t`轉錄`, t`整理`];
   const elapsedSinceProgress =
     now != null && progressUpdatedAt != null
       ? Math.max(0, now - progressUpdatedAt)
@@ -58,11 +62,10 @@ export function TranscriptionProgressPanel({
     progress.etaMs == null
       ? null
       : Math.max(0, progress.etaMs - elapsedSinceProgress);
-  const etaLabel =
-    etaMs == null ? "估算中" : formatDuration(etaMs);
+  const etaLabel = etaMs == null ? t`估算中` : formatDuration(etaMs);
   const activeStage = activeStageIndex(progress);
   const currentMessage =
-    progress.message?.trim() || phaseLabels[progress.phase] || "轉錄中";
+    progress.message?.trim() || phaseLabel(progress.phase, t) || t`轉錄中`;
   const processedSpeech =
     progress.processedAudioMs != null && progress.totalSpeechMs != null
       ? `${formatDuration(progress.processedAudioMs)} / ${formatDuration(
@@ -78,11 +81,11 @@ export function TranscriptionProgressPanel({
     : null;
 
   return (
-    <section className="transcription-progress" aria-label="轉錄進度摘要">
+    <section className="transcription-progress" aria-label={t`轉錄進度摘要`}>
       <div className="transcription-progress-head">
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">
-            目前進度
+            <Trans>目前進度</Trans>
           </div>
           <div className="truncate text-sm font-medium" title={currentMessage}>
             {currentMessage}
@@ -93,20 +96,20 @@ export function TranscriptionProgressPanel({
             {percent.toFixed(0)}%
           </strong>
           <span className="text-xs text-muted-foreground">
-            剩餘 {etaLabel}
+            <Trans>剩餘 {etaLabel}</Trans>
           </span>
         </div>
       </div>
 
       <Progress
-        aria-label={`轉錄進度 ${percent.toFixed(0)}%`}
+        aria-label={t`轉錄進度 ${percent.toFixed(0)}%`}
         className="transcription-progress-bar"
         value={percent}
       />
 
       <div
         className="transcription-stage-list"
-        aria-label="處理階段"
+        aria-label={t`處理階段`}
         role="list"
       >
         {stages.map((stage, index) => (
@@ -129,22 +132,22 @@ export function TranscriptionProgressPanel({
       </div>
 
       <div className="transcription-progress-foot">
-        <span>已用 {formatDuration(elapsedMs)}</span>
+          <span><Trans>已用 {formatDuration(elapsedMs)}</Trans></span>
         <span className="truncate" title={processedSpeech ?? undefined}>
-          {processedSpeech ? `已處理 ${processedSpeech}` : "正在估算語音量"}
+          {processedSpeech ? <Trans>已處理 {processedSpeech}</Trans> : <Trans>正在估算語音量</Trans>}
         </span>
       </div>
 
       {timings ? (
         <div
           className="flex flex-wrap gap-x-3 gap-y-1 border-t pt-2 text-xs tabular-nums text-muted-foreground"
-          aria-label="處理計時"
+          aria-label={t`處理計時`}
         >
-          <span className="font-medium text-foreground">計時</span>
+          <span className="font-medium text-foreground"><Trans>計時</Trans></span>
           <span>ASR {formatTiming(timings.asrMs)}</span>
           <span>decode {formatTiming(timings.asrDecodeMs)}</span>
           <span>encoder {formatTiming(timings.asrEncoderMs)}</span>
-          <span>其他 {formatTiming(otherStagesMs)}</span>
+          <span><Trans>其他 {formatTiming(otherStagesMs)}</Trans></span>
         </div>
       ) : null}
     </section>

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import { useLingui as useLinguiRuntime } from "@lingui/react";
+import { Trans, useLingui } from "@lingui/react/macro";
 import {
   ArchiveIcon,
   ChevronRightIcon,
@@ -60,6 +62,7 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -74,7 +77,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { TranscriptionProgressPanel } from "@/components/transcription/TranscriptionProgressPanel";
-import { languageItems } from "@/lib/app-constants";
+import { localizeLanguageGroups } from "@/lib/app-constants";
 import {
   basename,
   formatBytes,
@@ -86,6 +89,7 @@ import { cn } from "@/lib/utils";
 import type {
   DownloadProgress,
   ModelStatus,
+  SelectOption,
   TaskDraft,
   TaskStatus,
   TranscriptionTask,
@@ -95,15 +99,29 @@ import type {
 const statusMeta: Record<
   TaskStatus,
   {
-    label: string;
     badge: "default" | "secondary" | "destructive" | "outline";
   }
 > = {
-  queued: { label: "排隊中", badge: "outline" },
-  running: { label: "轉錄中", badge: "default" },
-  completed: { label: "完成", badge: "secondary" },
-  failed: { label: "失敗", badge: "destructive" },
+  queued: { badge: "outline" },
+  running: { badge: "default" },
+  completed: { badge: "secondary" },
+  failed: { badge: "destructive" },
 };
+
+type Translate = ReturnType<typeof useLingui>["t"];
+
+function statusLabel(status: TaskStatus, t: Translate) {
+  switch (status) {
+    case "queued":
+      return t`排隊中`;
+    case "running":
+      return t`轉錄中`;
+    case "completed":
+      return t`完成`;
+    case "failed":
+      return t`失敗`;
+  }
+}
 
 function taskPercent(task: TranscriptionTask) {
   if (task.status === "completed") return 100;
@@ -123,17 +141,23 @@ function taskEtaLabel(task: TranscriptionTask, now: number) {
   return `ETA ${formatDuration(etaMs)}`;
 }
 
-function taskLanguageLabel(task: TranscriptionTask) {
+function taskLanguageLabel(
+  task: TranscriptionTask,
+  t: Translate,
+  localizedLanguageItems: SelectOption[],
+) {
+  if (task.options.language === "auto") return t`自動偵測`;
+
   return (
-    languageItems.find((item) => item.value === task.options.language)?.label ??
-    "自動偵測"
+    localizedLanguageItems.find((item) => item.value === task.options.language)?.label ??
+    t`自動偵測`
   );
 }
 
-function timingRows(timings: TranscriptionTimings) {
+function timingRows(timings: TranscriptionTimings, t: Translate) {
   return [
     [
-      "總時間",
+      t`總時間`,
       formatTiming(timings.totalMs),
       "ASR",
       formatTiming(timings.asrMs),
@@ -147,13 +171,13 @@ function timingRows(timings: TranscriptionTimings) {
     [
       "VAD",
       formatTiming(timings.vadMs),
-      "對齊",
+      t`對齊`,
       formatTiming(timings.alignmentMs),
     ],
     [
-      "音訊準備",
+      t`音訊準備`,
       formatTiming(timings.audioPrepareMs),
-      "收尾",
+      t`收尾`,
       formatTiming(timings.finalizeMs),
     ],
     [
@@ -165,13 +189,13 @@ function timingRows(timings: TranscriptionTimings) {
     [
       "prefill",
       formatTiming(timings.asrPrefillMs),
-      "後處理",
+      t`後處理`,
       formatTiming(timings.asrPostprocessMs),
     ],
     [
       "ASR chunks",
       String(timings.asrChunkCount),
-      "產生 token",
+      t`產生 token`,
       String(timings.asrGeneratedTokens),
     ],
   ] as const;
@@ -222,6 +246,8 @@ export function TaskManagerPanel({
   onRemoveTask: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
 }) {
+  const { t } = useLingui();
+  const { _ } = useLinguiRuntime();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [etaTick, setEtaTick] = useState(() => Date.now());
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
@@ -234,9 +260,18 @@ export function TaskManagerPanel({
       })),
     [models],
   );
+  const localizedLanguageGroups = useMemo(
+    () => localizeLanguageGroups(_),
+    [_],
+  );
+  const localizedLanguageItems = useMemo(
+    () => localizedLanguageGroups.flatMap((group) => group.items),
+    [localizedLanguageGroups],
+  );
   const selectedLanguage =
-    languageItems.find((item) => item.value === taskDraft.options.language) ??
-    languageItems[0];
+    localizedLanguageItems.find(
+      (item) => item.value === taskDraft.options.language,
+    ) ?? localizedLanguageItems[0];
   const taskModelDownloadProgress = downloadProgress;
   const taskModelDownloadPercent = Math.max(
     0,
@@ -244,7 +279,7 @@ export function TaskManagerPanel({
   );
   const taskModelDownloadSpeed = taskModelDownloadProgress
     ? `${formatBytes(downloadMovingAverageSpeedBytesPerSec)}/s`
-    : "等待中";
+    : t`等待中`;
 
   useEffect(() => {
     if (!hasRunningTasks) return;
@@ -268,7 +303,7 @@ export function TaskManagerPanel({
   return (
     <>
       <div className={cn("task-workspace", isDraggingFiles && "is-dragging")}>
-        <section className="task-list-panel" aria-label="轉錄任務">
+        <section className="task-list-panel" aria-label={t`轉錄任務`}>
           <div className="task-list-content">
             <ScrollArea
               className={cn("task-table-wrap", tasks.length === 0 && "is-empty")}
@@ -278,11 +313,11 @@ export function TaskManagerPanel({
                 <Table className="task-table">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>檔案</TableHead>
-                      <TableHead>狀態</TableHead>
-                      <TableHead>進度</TableHead>
-                      <TableHead>設定</TableHead>
-                      <TableHead className="text-right">動作</TableHead>
+                      <TableHead><Trans>檔案</Trans></TableHead>
+                      <TableHead><Trans>狀態</Trans></TableHead>
+                      <TableHead><Trans>進度</Trans></TableHead>
+                      <TableHead><Trans>設定</Trans></TableHead>
+                      <TableHead className="text-right"><Trans>動作</Trans></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -303,18 +338,18 @@ export function TaskManagerPanel({
                                 {basename(task.audioPath)}
                               </div>
                               <div className="truncate text-xs text-muted-foreground">
-                                {task.outputDir || "來源資料夾"}
+                                {task.outputDir || <Trans>來源資料夾</Trans>}
                               </div>
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={meta.badge}>{meta.label}</Badge>
+                            <Badge variant={meta.badge}>{statusLabel(task.status, t)}</Badge>
                           </TableCell>
                           <TableCell className="task-progress-cell">
                             <div className="task-progress-stack">
                               <Progress
                                 value={percent}
-                                aria-label={`${basename(task.audioPath)} 進度`}
+                                aria-label={t`${basename(task.audioPath)} 進度`}
                               />
                               <div className="task-progress-meta">
                                 <span>{percent.toFixed(0)}%</span>
@@ -325,7 +360,7 @@ export function TaskManagerPanel({
                           <TableCell className="task-options-cell">
                             <div className="truncate">{task.modelTitle}</div>
                             <div className="truncate text-xs text-muted-foreground">
-                              {taskLanguageLabel(task)}
+                              {taskLanguageLabel(task, t, localizedLanguageItems)}
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
@@ -341,7 +376,7 @@ export function TaskManagerPanel({
                                 >
                                   <RotateCcwIcon data-icon="inline-start" />
                                   <span className="sr-only">
-                                    重試 {basename(task.audioPath)}
+                                    {t`重試 ${basename(task.audioPath)}`}
                                   </span>
                                 </Button>
                               ) : null}
@@ -356,7 +391,7 @@ export function TaskManagerPanel({
                               >
                                 <Trash2Icon data-icon="inline-start" />
                                 <span className="sr-only">
-                                  移除 {basename(task.audioPath)}
+                                    {t`移除 ${basename(task.audioPath)}`}
                                 </span>
                               </Button>
                             </div>
@@ -373,8 +408,8 @@ export function TaskManagerPanel({
                       <EmptyMedia variant="icon">
                         <ArchiveIcon />
                       </EmptyMedia>
-                      <EmptyTitle>尚無任務</EmptyTitle>
-                      <EmptyDescription>新增檔案後會自動排隊。</EmptyDescription>
+                      <EmptyTitle><Trans>尚無任務</Trans></EmptyTitle>
+                      <EmptyDescription><Trans>拖放檔案到這裡來建立任務</Trans></EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent>
                       <Button
@@ -382,7 +417,7 @@ export function TaskManagerPanel({
                         onClick={onPickFiles}
                       >
                         <FileAudioIcon data-icon="inline-start" />
-                        {isDraggingFiles ? "放開以加入任務" : "拖放或選取檔案"}
+                        {isDraggingFiles ? <Trans>放開以加入任務</Trans> : <Trans>選擇檔案</Trans>}
                       </Button>
                     </EmptyContent>
                   </div>
@@ -408,10 +443,10 @@ export function TaskManagerPanel({
         >
           <SheetHeader className="pr-12">
             <div className="flex items-center gap-2">
-              <SheetTitle>任務詳情</SheetTitle>
+              <SheetTitle><Trans>任務詳情</Trans></SheetTitle>
               {selectedTask ? (
                 <Badge variant={statusMeta[selectedTask.status].badge}>
-                  {statusMeta[selectedTask.status].label}
+                  {statusLabel(selectedTask.status, t)}
                 </Badge>
               ) : null}
             </div>
@@ -419,13 +454,17 @@ export function TaskManagerPanel({
               className="truncate"
               title={selectedTask ? basename(selectedTask.audioPath) : undefined}
             >
-              {selectedTask ? basename(selectedTask.audioPath) : "尚未選取任務"}
+              {selectedTask ? basename(selectedTask.audioPath) : <Trans>尚未選取任務</Trans>}
             </SheetDescription>
           </SheetHeader>
           <Separator />
           <div className="task-detail-content">
             {selectedTask ? (
-              <TaskDetail now={etaTick} task={selectedTask} />
+              <TaskDetail
+                now={etaTick}
+                task={selectedTask}
+                localizedLanguageItems={localizedLanguageItems}
+              />
             ) : null}
           </div>
         </SheetContent>
@@ -434,16 +473,16 @@ export function TaskManagerPanel({
       <Dialog open={isTaskDialogOpen} onOpenChange={onTaskDialogOpenChange}>
         <DialogContent className="task-dialog">
           <DialogHeader>
-            <DialogTitle>新增轉錄任務</DialogTitle>
+            <DialogTitle><Trans>新增轉錄任務</Trans></DialogTitle>
             <DialogDescription>
-              {taskDraft.files.length} 個檔案會使用相同模型、語言、斷句方式與輸出資料夾。
+              <Trans>{taskDraft.files.length} 個檔案會使用相同模型、語言、斷句方式與輸出資料夾。</Trans>
             </DialogDescription>
           </DialogHeader>
 
           <div className="task-dialog-body scroll-fade">
             <FieldGroup>
               <Field>
-                <FieldLabel>轉錄模型</FieldLabel>
+                <FieldLabel><Trans>轉錄模型</Trans></FieldLabel>
                 <Select
                   items={modelItems}
                   value={taskDraft.modelId}
@@ -454,9 +493,9 @@ export function TaskManagerPanel({
                     }))
                   }
                 >
-                  <SelectTrigger className="w-full" aria-label="轉錄模型">
+                  <SelectTrigger className="w-full" aria-label={t`轉錄模型`}>
                     <SelectValue>
-                      {draftModel?.title ?? "選擇轉錄模型"}
+                      {draftModel?.title ?? <Trans>選擇轉錄模型</Trans>}
                     </SelectValue>
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false}>
@@ -472,9 +511,9 @@ export function TaskManagerPanel({
               </Field>
 
               <Field>
-                <FieldLabel>轉錄語言</FieldLabel>
+                <FieldLabel><Trans>轉錄語言</Trans></FieldLabel>
                 <Select
-                  items={languageItems}
+                  items={localizedLanguageItems}
                   value={taskDraft.options.language}
                   onValueChange={(value) =>
                     onTaskDraftChange((current) => ({
@@ -486,33 +525,36 @@ export function TaskManagerPanel({
                     }))
                   }
                 >
-                  <SelectTrigger className="w-full" aria-label="轉錄語言">
+                  <SelectTrigger className="w-full" aria-label={t`轉錄語言`}>
                     <SelectValue>{selectedLanguage.label}</SelectValue>
                   </SelectTrigger>
                   <SelectContent alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      {languageItems.map((item) => (
-                        <SelectItem key={item.value} value={item.value}>
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
+                    {localizedLanguageGroups.map((group) => (
+                      <SelectGroup key={group.id}>
+                        <SelectLabel>{group.label}</SelectLabel>
+                        {group.items.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))}
                   </SelectContent>
                 </Select>
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="task-output-dir">輸出資料夾</FieldLabel>
+                <FieldLabel htmlFor="task-output-dir"><Trans>輸出資料夾</Trans></FieldLabel>
                 <div className="flex gap-2">
                   <Input
                     id="task-output-dir"
                     readOnly
                     value={taskDraft.outputDir}
-                    placeholder="預設使用來源檔案所在資料夾"
+                    placeholder={t`預設使用來源檔案所在資料夾`}
                   />
                   <Button variant="outline" onClick={onPickOutputDir}>
                     <FolderOpenIcon data-icon="inline-start" />
-                    選取
+                    <Trans>選取</Trans>
                   </Button>
                 </div>
               </Field>
@@ -520,11 +562,10 @@ export function TaskManagerPanel({
               <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle id="task-write-srt-label">
-                    輸出 SRT 字幕
+                    <Trans>輸出 SRT 字幕</Trans>
                   </FieldTitle>
                   <FieldDescription>
-                    建立可隨音訊同步顯示的字幕檔。中文、英文等支援語言會產生較精準的字幕時間，首次使用時需下載約 1.8 GB
-                    的模型；其他語言則使用估算時間。
+                    <Trans>建立字幕檔，首次使用時需下載約 1.8 GB 的對齊模型。</Trans>
                   </FieldDescription>
                 </FieldContent>
                 <Switch
@@ -545,10 +586,10 @@ export function TaskManagerPanel({
               <Field orientation="horizontal">
                 <FieldContent>
                   <FieldTitle id="task-segment-by-punctuation-label">
-                    依標點符號斷句
+                    <Trans>依標點符號斷句</Trans>
                   </FieldTitle>
                   <FieldDescription>
-                    開啟後會依句號、逗號等標點建立片段；關閉後保留系統偵測出的自然音訊片段。
+                    <Trans>自動依句號、逗號等標點符號斷句，適用於 SRT 字幕產生等情況。</Trans>
                   </FieldDescription>
                 </FieldContent>
                 <Switch
@@ -587,7 +628,7 @@ export function TaskManagerPanel({
               variant="outline"
               onClick={() => onTaskDialogOpenChange(false)}
             >
-              取消
+              <Trans>取消</Trans>
             </Button>
             <Button disabled={!canConfirmTasks} onClick={onConfirmTaskDraft}>
               {isConfirmingTasks ? (
@@ -595,7 +636,7 @@ export function TaskManagerPanel({
               ) : (
                 <PlusIcon data-icon="inline-start" />
               )}
-              {isConfirmingTasks ? "新增中" : "新增任務"}
+              {isConfirmingTasks ? <Trans>新增中</Trans> : <Trans>新增任務</Trans>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -614,29 +655,29 @@ export function TaskManagerPanel({
           showCloseButton={!isConfirmingTasks && !isDownloading}
         >
           <DialogHeader>
-            <DialogTitle>下載模型</DialogTitle>
+            <DialogTitle><Trans>下載模型</Trans></DialogTitle>
             <DialogDescription>
               {draftModel
-                ? `新增任務需要先下載 ${draftModel.title}；完成後會自動加入佇列。`
-                : "新增任務需要先下載模型；完成後會自動加入佇列。"}
+                ? <Trans>新增任務需要先下載 {draftModel.title}；完成後會自動加入佇列。</Trans>
+                : <Trans>新增任務需要先下載模型；完成後會自動加入佇列。</Trans>}
             </DialogDescription>
           </DialogHeader>
 
           {modelDownloadError ? (
             <Alert variant="destructive">
               <TriangleAlertIcon />
-              <AlertTitle>模型下載失敗</AlertTitle>
+              <AlertTitle><Trans>模型下載失敗</Trans></AlertTitle>
               <AlertDescription>{modelDownloadError}</AlertDescription>
             </Alert>
           ) : (
             <div className="task-model-download">
               <Progress
-                aria-label="模型下載整體進度"
+                aria-label={t`模型下載整體進度`}
                 className="task-model-download-progress"
                 value={taskModelDownloadPercent}
               >
                 <ProgressLabel className="min-w-0 flex-1 truncate font-normal text-muted-foreground">
-                  下載速度 {taskModelDownloadSpeed}
+                  <Trans>下載速度 {taskModelDownloadSpeed}</Trans>
                 </ProgressLabel>
                 <ProgressValue className="shrink-0 text-base font-medium text-foreground">
                   {() => `${taskModelDownloadPercent.toFixed(0)}%`}
@@ -651,7 +692,7 @@ export function TaskManagerPanel({
               disabled={isConfirmingTasks || isDownloading}
               onClick={() => onModelDownloadDialogOpenChange(false)}
             >
-              回到任務設定
+              <Trans>回到任務設定</Trans>
             </Button>
             <Button
               disabled={
@@ -667,7 +708,7 @@ export function TaskManagerPanel({
               ) : (
                 <DownloadIcon data-icon="inline-start" />
               )}
-              {modelDownloadError ? "重新下載並加入佇列" : "下載中"}
+              {modelDownloadError ? <Trans>重新下載並加入佇列</Trans> : <Trans>下載中</Trans>}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -676,7 +717,16 @@ export function TaskManagerPanel({
   );
 }
 
-function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
+function TaskDetail({
+  now,
+  task,
+  localizedLanguageItems,
+}: {
+  now: number;
+  task: TranscriptionTask;
+  localizedLanguageItems: SelectOption[];
+}) {
+  const { t } = useLingui();
   const progress = task.progress;
   const result = task.result;
 
@@ -684,8 +734,8 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
     return (
       <Alert variant="destructive">
         <TriangleAlertIcon />
-        <AlertTitle>轉錄失敗</AlertTitle>
-        <AlertDescription>{task.error ?? "未知錯誤"}</AlertDescription>
+        <AlertTitle><Trans>轉錄失敗</Trans></AlertTitle>
+        <AlertDescription>{task.error ?? <Trans>未知錯誤</Trans>}</AlertDescription>
       </Alert>
     );
   }
@@ -697,9 +747,9 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
           <EmptyMedia variant="icon">
             <ArchiveIcon />
           </EmptyMedia>
-          <EmptyTitle>等待處理</EmptyTitle>
+          <EmptyTitle><Trans>等待處理</Trans></EmptyTitle>
           <EmptyDescription>
-            {task.modelTitle} · {taskLanguageLabel(task)}
+            {task.modelTitle} · {taskLanguageLabel(task, t, localizedLanguageItems)}
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -724,13 +774,13 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
           <div className="task-partial-result-head">
             <div className="min-w-0">
               <div id="live-transcript-title" className="text-sm font-medium">
-                即時逐字稿
+                <Trans>即時逐字稿</Trans>
               </div>
               <p className="text-xs text-muted-foreground">
-                時間為 VAD 推估，內容會隨轉錄進度更新。
+                <Trans>時間為 VAD 推估，內容會隨轉錄進度更新。</Trans>
               </p>
             </div>
-            <Badge variant="outline">{partialSegments.length} 段</Badge>
+            <Badge variant="outline"><Trans>{partialSegments.length} 段</Trans></Badge>
           </div>
           {partialSegments.length > 0 ? (
             <ScrollArea
@@ -740,8 +790,8 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-40">時間</TableHead>
-                    <TableHead>文字</TableHead>
+                    <TableHead className="w-40"><Trans>時間</Trans></TableHead>
+                    <TableHead><Trans>文字</Trans></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -761,7 +811,7 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
             </ScrollArea>
           ) : (
             <div className="task-partial-empty text-sm text-muted-foreground">
-              辨識到語音後，逐字稿會顯示在這裡。
+              <Trans>辨識到語音後，逐字稿會顯示在這裡。</Trans>
             </div>
           )}
         </section>
@@ -771,7 +821,7 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
 
   if (!result) return null;
 
-  const resultTimingRows = timingRows(result.timings);
+  const resultTimingRows = timingRows(result.timings, t);
 
   return (
     <ScrollArea
@@ -788,19 +838,19 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
               {basename(result.audioPath)}
             </div>
             <div className="truncate text-sm text-muted-foreground">
-              {result.srtPath ? `SRT: ${result.srtPath}` : "未輸出 SRT"}
+              {result.srtPath ? <Trans>SRT: {result.srtPath}</Trans> : <Trans>未輸出 SRT</Trans>}
             </div>
           </div>
           <Badge variant="outline">
-            總處理 {formatDuration(result.durationMs)}
+            <Trans>總處理 {formatDuration(result.durationMs)}</Trans>
           </Badge>
         </div>
         <details className="group">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-2 [&::-webkit-details-marker]:hidden">
             <div>
-              <div className="text-sm font-medium">處理計時</div>
+              <div className="text-sm font-medium"><Trans>處理計時</Trans></div>
               <div className="text-xs text-muted-foreground">
-                ASR 細項與管線耗時
+                <Trans>ASR 細項與管線耗時</Trans>
               </div>
             </div>
             <ChevronRightIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90" />
@@ -809,10 +859,10 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
           <Table className="table-fixed">
             <TableHeader>
               <TableRow>
-                <TableHead className="w-1/4">項目</TableHead>
-                <TableHead className="w-1/4 text-right">數值</TableHead>
-                <TableHead className="w-1/4">項目</TableHead>
-                <TableHead className="w-1/4 text-right">數值</TableHead>
+                <TableHead className="w-1/4"><Trans>項目</Trans></TableHead>
+                <TableHead className="w-1/4 text-right"><Trans>數值</Trans></TableHead>
+                <TableHead className="w-1/4"><Trans>項目</Trans></TableHead>
+                <TableHead className="w-1/4 text-right"><Trans>數值</Trans></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -842,8 +892,8 @@ function TaskDetail({ now, task }: { now: number; task: TranscriptionTask }) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>時間</TableHead>
-              <TableHead>文字</TableHead>
+            <TableHead><Trans>時間</Trans></TableHead>
+            <TableHead><Trans>文字</Trans></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

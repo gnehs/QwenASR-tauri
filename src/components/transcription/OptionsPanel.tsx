@@ -1,3 +1,5 @@
+import { useMemo } from "react";
+import { useLingui } from "@lingui/react";
 import { SlidersHorizontalIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -14,6 +16,7 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -28,7 +31,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Switch } from "@/components/ui/switch";
-import { languageItems } from "@/lib/app-constants";
+import { localizeLanguageGroups } from "@/lib/app-constants";
 import type { OptionsState } from "@/types/transcription";
 
 export function OptionsPanel({
@@ -38,6 +41,12 @@ export function OptionsPanel({
   options: OptionsState;
   onChange: (next: OptionsState) => void;
 }) {
+  const { _ } = useLingui();
+  const languageGroups = useMemo(() => localizeLanguageGroups(_), [_]);
+  const languageItems = useMemo(
+    () => languageGroups.flatMap((group) => group.items),
+    [languageGroups],
+  );
   const language = languageItems.find((item) => item.value === options.language);
   const summaryItems = [
     language?.label ?? "自動偵測",
@@ -82,10 +91,15 @@ export function OptionsPanel({
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   <SelectGroup>
-                    {languageItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value}>
-                        {item.label}
-                      </SelectItem>
+                    {languageGroups.map((group) => (
+                      <SelectGroup key={group.id}>
+                        <SelectLabel>{group.label}</SelectLabel>
+                        {group.items.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
                     ))}
                   </SelectGroup>
                 </SelectContent>
