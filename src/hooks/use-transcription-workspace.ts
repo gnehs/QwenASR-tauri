@@ -105,12 +105,27 @@ function readStoredTranscriptionOptions(): OptionsState {
       typeof stored.context === "string"
         ? stored.context
         : defaultOptions.context;
+    const writeTxt =
+      typeof stored.writeTxt === "boolean"
+        ? stored.writeTxt
+        : false;
     const segmentByPunctuation =
       typeof stored.segmentByPunctuation === "boolean"
         ? stored.segmentByPunctuation
         : defaultOptions.segmentByPunctuation;
+    const writeJson =
+      typeof stored.writeJson === "boolean"
+        ? stored.writeJson
+        : defaultOptions.writeJson;
 
-    return { language, context, writeSrt, segmentByPunctuation };
+    return {
+      language,
+      context,
+      writeTxt,
+      writeSrt,
+      writeJson,
+      segmentByPunctuation,
+    };
   } catch {
     return { ...defaultOptions };
   }
@@ -147,7 +162,9 @@ function buildOptionsPayload(task: TranscriptionTask) {
     modelId: task.modelId,
     language: task.options.language,
     context: task.options.context.trim(),
+    writeTxt: task.options.writeTxt,
     writeSrt: task.options.writeSrt,
+    writeJson: task.options.writeJson,
     segmentByPunctuation: task.options.segmentByPunctuation,
     outputDir: task.outputDir || null,
   };
@@ -162,7 +179,7 @@ function isInvokeErrorKind(error: unknown, kind: string) {
 }
 
 function shouldUseForcedAligner(options: OptionsState) {
-  if (!options.writeSrt) return false;
+  if (!options.writeSrt && !options.writeJson) return false;
 
   const language = options.language.trim().toLowerCase();
   if (!language || language === "auto") return true;
@@ -244,7 +261,7 @@ async function sendTaskNotification(
   result: TranscriptionResult,
   title: string,
   completedMessage: string,
-  srtMessage: string,
+  outputMessagePrefix: string,
 ) {
   try {
     let permissionGranted = await isPermissionGranted();
@@ -258,10 +275,17 @@ async function sendTaskNotification(
     }
 
     if (permissionGranted) {
+      const outputFormats = [
+        result.txtPath ? "TXT" : null,
+        result.srtPath ? "SRT" : null,
+        result.jsonPath ? "JSON" : null,
+      ].filter(Boolean);
       sendNotification({
         title,
         body: `${basename(task.audioPath)} ${completedMessage}${
-          result.srtPath ? srtMessage : ""
+          outputFormats.length > 0
+            ? `${outputMessagePrefix} ${outputFormats.join("、")}`
+            : ""
         }`,
       });
     }
@@ -429,7 +453,7 @@ export function useTranscriptionWorkspace() {
         result,
         t`轉錄完成`,
         t`已完成`,
-        t`，SRT 已輸出`,
+        t`，已輸出`,
       );
     } catch (error) {
       if (isInvokeErrorKind(error, "cancelled")) {

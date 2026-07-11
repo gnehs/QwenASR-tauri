@@ -12,6 +12,7 @@ use qwen3_asr::{
     inference::{AsrInference, InferenceTimings, TranscribeResult as QwenTranscribeResult},
     tensor::Device,
 };
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::audio;
@@ -19,7 +20,8 @@ use crate::error::{AppError, AppResult};
 use crate::forced_alignment::{tokenize_alignment_units, AlignedUnit, ForcedAlignerInference};
 use crate::models::{
     TranscribeBatchRequest, TranscribeFileRequest, TranscribeOptions, TranscriptSegment,
-    TranscriptionProgress, TranscriptionResult, TranscriptionTimings, FORCED_ALIGNER_MODEL_ID,
+    TranscriptWord, TranscriptionProgress, TranscriptionResult, TranscriptionTimings,
+    FORCED_ALIGNER_MODEL_ID,
 };
 use crate::paths::{model_dir, model_status};
 use crate::srt;
@@ -305,6 +307,21 @@ fn transcribe_file_inner(
         finalize_transcription_with_context(app, started, aligner.as_ref(), pending, cancel)?;
     result.duration_ms = started.elapsed().as_millis();
     result.timings.total_ms = result.duration_ms;
+    if let Some(json_path) = result.json_path.as_deref() {
+        rewrite_json_payload(
+            Path::new(json_path),
+            &result.audio_path,
+            result.detected_language.as_deref(),
+            &result.language_source,
+            &result.alignment_status,
+            result.alignment_coverage,
+            &result.text,
+            &result.segments,
+            &result.words,
+            result.duration_ms,
+            &result.timings,
+        )?;
+    }
 
     emit_progress(
         app,
@@ -781,6 +798,8 @@ struct PendingTranscription {
     total_speech_ms: u64,
     skipped_silence_ms: u64,
     transcript_parts: Vec<String>,
+    detected_language: Option<String>,
+    language_source: String,
     vad_estimated_segments: Vec<TranscriptSegment>,
     chunks: Vec<PendingChunk>,
     duration_ms: u128,
@@ -893,6 +912,8 @@ fn transcribe_with_context(
     let mut processed_audio_ms = 0u64;
     let mut processed_asr_work_ms = 0u64;
     let mut transcript_parts = Vec::with_capacity(chunks.len());
+    let specified_language = normalize_output_language(options.language.as_deref());
+    let mut detected_languages = Vec::new();
     let mut pending_chunks = Vec::with_capacity(chunks.len());
     let mut vad_estimated_segments = Vec::new();
     let total_chunks = chunks.len();
@@ -990,9 +1011,21 @@ fn transcribe_with_context(
         let chunk_text =
             convert_text_for_output_language(raw_chunk_text.clone(), output_language.as_deref())?;
         if !raw_chunk_text.trim().is_empty() {
-            let detected_language = parse_auto_asr_language(&raw_result.raw_output)
-                .unwrap_or(raw_result.language.as_str());
-            let alignment_language = alignment_language(asr_language.as_deref(), detected_language);
+            let chunk_detected_language = parse_auto_asr_language(&raw_result.raw_output)
+                .map(str::to_string)
+                .or_else(|| {
+                    (!raw_result.language.eq_ignore_ascii_case("unknown"))
+                        .then(|| raw_result.language.clone())
+                });
+            if specified_language.is_none() {
+                if let Some(language) = chunk_detected_language.as_deref() {
+                    detected_languages.push(language.to_string());
+                }
+            }
+            let alignment_language = alignment_language(
+                asr_language.as_deref(),
+                chunk_detected_language.as_deref().unwrap_or(""),
+            );
             transcript_parts.push(chunk_text.clone());
             vad_estimated_segments.extend(build_approximate_segments_with_offset(
                 &chunk_text,
@@ -1044,6 +1077,14 @@ fn transcribe_with_context(
     let duration_ms = started.elapsed().as_millis();
     timings.total_ms = duration_ms;
 
+    let (detected_language, language_source) = if let Some(language) = specified_language {
+        (Some(language), "specified".to_string())
+    } else if let Some(language) = most_common_language(&detected_languages) {
+        (Some(language), "detected".to_string())
+    } else {
+        (None, "unknown".to_string())
+    };
+
     Ok(PendingTranscription {
         audio_path: audio_path.to_string(),
         options: options.clone(),
@@ -1055,6 +1096,8 @@ fn transcribe_with_context(
         total_speech_ms: total_chunk_audio_ms,
         skipped_silence_ms,
         transcript_parts,
+        detected_language,
+        language_source,
         vad_estimated_segments,
         chunks: pending_chunks,
         duration_ms,
@@ -1073,14 +1116,16 @@ fn finalize_transcription_with_context(
     let alignment_started = Instant::now();
     let vad_estimated_segments = pending.vad_estimated_segments.clone();
     let output_language = normalize_output_language(pending.options.language.as_deref());
-    let total_alignment_ms = pending
+    let total_alignment_audio_ms = pending
         .chunks
         .iter()
         .map(|chunk| chunk.range.duration_ms())
-        .sum::<u64>()
-        .max(1);
+        .sum::<u64>();
+    let total_alignment_ms = total_alignment_audio_ms.max(1);
     let mut processed_alignment_ms = 0u64;
     let mut segments = Vec::new();
+    let mut words = Vec::new();
+    let mut aligned_audio_ms = 0u64;
 
     for chunk in pending.chunks {
         check_cancelled(cancel)?;
@@ -1125,7 +1170,7 @@ fn finalize_transcription_with_context(
                         ))
                     })?;
                 check_cancelled(cancel)?;
-                build_aligned_segments_with_offset(
+                let aligned_segments = build_aligned_segments_with_offset(
                     &chunk.raw_text,
                     &aligned_units,
                     language,
@@ -1133,10 +1178,23 @@ fn finalize_transcription_with_context(
                     chunk.range.start_ms(),
                     chunk.range.duration_ms(),
                     pending.options.segment_by_punctuation,
-                )?
+                )?;
+                if pending.options.write_json && aligned_segments.is_some() {
+                    words.extend(aligned_words_with_offset(
+                        &aligned_units,
+                        output_language.as_deref(),
+                        chunk.range.start_ms(),
+                        chunk.range.duration_ms(),
+                    )?);
+                }
+                aligned_segments
             } else {
                 None
             };
+
+        if aligned_segments.is_some() {
+            aligned_audio_ms = aligned_audio_ms.saturating_add(chunk.range.duration_ms());
+        }
 
         segments.extend(aligned_segments.unwrap_or_else(|| {
             build_approximate_segments_with_offset(
@@ -1150,6 +1208,19 @@ fn finalize_transcription_with_context(
     }
 
     pending.timings.alignment_ms = alignment_started.elapsed().as_millis();
+    let alignment_coverage = if total_alignment_audio_ms == 0 {
+        0.0
+    } else {
+        (aligned_audio_ms as f64 / total_alignment_audio_ms as f64).clamp(0.0, 1.0)
+    };
+    let alignment_status = if aligner.is_none() || aligned_audio_ms == 0 {
+        "approximate"
+    } else if aligned_audio_ms >= total_alignment_audio_ms {
+        "forced"
+    } else {
+        "partial"
+    }
+    .to_string();
 
     emit_progress_with_metrics(
         app,
@@ -1157,11 +1228,15 @@ fn finalize_transcription_with_context(
         "running",
         if pending.options.write_srt {
             "writingSrt"
+        } else if pending.options.write_json {
+            "writingJson"
         } else {
             "finalizing"
         },
         if pending.options.write_srt {
             "寫入 SRT 字幕"
+        } else if pending.options.write_json {
+            "寫入 JSON 逐字時間戳"
         } else {
             "整理轉錄結果"
         },
@@ -1187,8 +1262,30 @@ fn finalize_transcription_with_context(
     let finalize_started = Instant::now();
     let text = pending.transcript_parts.join("\n");
     check_cancelled(cancel)?;
+    let audio_path = pending.audio_path.clone();
+    let output_stem =
+        if pending.options.write_txt || pending.options.write_srt || pending.options.write_json {
+            Some(resolve_output_stem(&audio_path, &pending.options)?)
+        } else {
+            None
+        };
+    let txt_path = if pending.options.write_txt {
+        Some(write_txt(
+            &audio_path,
+            &pending.options,
+            output_stem.as_deref().expect("output stem is required"),
+            &text,
+        )?)
+    } else {
+        None
+    };
     let srt_path = if pending.options.write_srt {
-        Some(write_srt(&pending.audio_path, &pending.options, &segments)?)
+        Some(write_srt(
+            &audio_path,
+            &pending.options,
+            output_stem.as_deref().expect("output stem is required"),
+            &segments,
+        )?)
     } else {
         None
     };
@@ -1198,11 +1295,58 @@ fn finalize_transcription_with_context(
         .saturating_add(pending.timings.alignment_ms)
         .saturating_add(pending.timings.finalize_ms);
 
+    let json_path = if pending.options.write_json {
+        Some(write_json(
+            &audio_path,
+            &pending.options,
+            output_stem.as_deref().expect("output stem is required"),
+            pending.detected_language.as_deref(),
+            &pending.language_source,
+            &alignment_status,
+            alignment_coverage,
+            &text,
+            &segments,
+            &words,
+            pending.timings.total_ms,
+            &pending.timings,
+        )?)
+    } else {
+        None
+    };
+
+    if json_path.is_some() {
+        pending.timings.finalize_ms = finalize_started.elapsed().as_millis();
+        pending.timings.total_ms = pending
+            .duration_ms
+            .saturating_add(pending.timings.alignment_ms)
+            .saturating_add(pending.timings.finalize_ms);
+        rewrite_json_payload(
+            Path::new(json_path.as_deref().expect("JSON path is required")),
+            &audio_path,
+            pending.detected_language.as_deref(),
+            &pending.language_source,
+            &alignment_status,
+            alignment_coverage,
+            &text,
+            &segments,
+            &words,
+            pending.timings.total_ms,
+            &pending.timings,
+        )?;
+    }
+
     Ok(TranscriptionResult {
-        audio_path: pending.audio_path,
+        audio_path,
+        detected_language: pending.detected_language,
+        language_source: pending.language_source,
         text,
         segments,
+        words,
+        alignment_status,
+        alignment_coverage,
+        txt_path,
         srt_path,
+        json_path,
         duration_ms: pending.timings.total_ms,
         timings: pending.timings,
     })
@@ -1264,8 +1408,36 @@ fn normalize_asr_language(output_language: Option<&str>) -> Option<String> {
         })
 }
 
+fn most_common_language(languages: &[String]) -> Option<String> {
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for language in languages {
+        let normalized = language.trim();
+        if normalized.is_empty() {
+            continue;
+        }
+
+        if let Some((_, count)) = counts
+            .iter_mut()
+            .find(|(candidate, _)| candidate.eq_ignore_ascii_case(normalized))
+        {
+            *count = count.saturating_add(1);
+        } else {
+            counts.push((normalized.to_string(), 1));
+        }
+    }
+
+    counts
+        .into_iter()
+        .fold(None, |best, candidate| match best {
+            None => Some(candidate),
+            Some((_, best_count)) if candidate.1 > best_count => Some(candidate),
+            Some(best) => Some(best),
+        })
+        .map(|(language, _)| language)
+}
+
 fn should_use_forced_aligner(options: &TranscribeOptions) -> bool {
-    if !options.write_srt {
+    if !options.write_srt && !options.write_json {
         return false;
     }
 
@@ -1542,6 +1714,32 @@ fn build_aligned_segments_with_offset(
     }
 
     Ok(Some(segments))
+}
+
+fn aligned_words_with_offset(
+    aligned_units: &[AlignedUnit],
+    output_language: Option<&str>,
+    offset_ms: u64,
+    audio_ms: u64,
+) -> AppResult<Vec<TranscriptWord>> {
+    let mut words = Vec::with_capacity(aligned_units.len());
+    for unit in aligned_units {
+        let local_start = unit.start_ms.min(audio_ms.saturating_sub(1));
+        let local_end = unit
+            .end_ms
+            .max(local_start.saturating_add(1))
+            .min(audio_ms.max(1));
+        let text = convert_text_for_output_language(unit.text.clone(), output_language)?;
+        if text.trim().is_empty() {
+            continue;
+        }
+        words.push(TranscriptWord {
+            start_ms: offset_ms.saturating_add(local_start),
+            end_ms: offset_ms.saturating_add(local_end),
+            text,
+        });
+    }
+    Ok(words)
 }
 
 fn format_duration_short(ms: u64) -> String {
@@ -2103,7 +2301,9 @@ mod tests {
             model_id: "qwen3-asr-0.6b".into(),
             language: Some(language.into()),
             context: String::new(),
+            write_txt: false,
             write_srt,
+            write_json: false,
             segment_by_punctuation: true,
             output_dir: None,
         };
@@ -2112,6 +2312,101 @@ mod tests {
         assert!(should_use_forced_aligner(&options("Chinese", true)));
         assert!(!should_use_forced_aligner(&options("Arabic", true)));
         assert!(!should_use_forced_aligner(&options("Chinese", false)));
+
+        let json_options = |language: &str| TranscribeOptions {
+            model_id: "qwen3-asr-0.6b".into(),
+            language: Some(language.into()),
+            context: String::new(),
+            write_txt: false,
+            write_srt: false,
+            write_json: true,
+            segment_by_punctuation: true,
+            output_dir: None,
+        };
+
+        assert!(should_use_forced_aligner(&json_options("auto")));
+        assert!(should_use_forced_aligner(&json_options("English")));
+        assert!(!should_use_forced_aligner(&json_options("Arabic")));
+    }
+
+    #[test]
+    fn serializes_json_payload_with_word_timestamps() {
+        let timings = TranscriptionTimings::default();
+        let segments = vec![TranscriptSegment {
+            start_ms: 0,
+            end_ms: 500,
+            text: "AI".into(),
+        }];
+        let words = vec![TranscriptWord {
+            start_ms: 100,
+            end_ms: 400,
+            text: "AI".into(),
+        }];
+        let payload = TranscriptJsonPayload {
+            schema_version: 1,
+            audio_path: "recording.wav",
+            detected_language: Some("English"),
+            language_source: "detected",
+            text: "AI",
+            segments: &segments,
+            words: &words,
+            alignment_status: "forced",
+            alignment_coverage: 1.0,
+            duration_ms: 500,
+            timings: &timings,
+        };
+
+        let value = serde_json::to_value(payload).unwrap();
+        assert_eq!(value["schemaVersion"], 1);
+        assert_eq!(value["detectedLanguage"], "English");
+        assert_eq!(value["languageSource"], "detected");
+        assert_eq!(value["alignmentStatus"], "forced");
+        assert_eq!(value["alignmentCoverage"], 1.0);
+        assert_eq!(value["words"][0]["startMs"], 100);
+        assert_eq!(value["words"][0]["endMs"], 400);
+    }
+
+    #[test]
+    fn chooses_the_first_language_when_counts_tie() {
+        let languages = vec!["English".into(), "Chinese".into()];
+        assert_eq!(most_common_language(&languages).as_deref(), Some("English"));
+    }
+
+    #[test]
+    fn chooses_the_language_mode_for_auto_detection() {
+        let languages = vec!["English".into(), "Chinese".into(), "Chinese".into()];
+        assert_eq!(most_common_language(&languages).as_deref(), Some("Chinese"));
+    }
+
+    #[test]
+    fn uses_a_stable_suffix_for_existing_output_stems() {
+        let first = stable_path_suffix("/recordings/a.wav");
+        assert_eq!(first, stable_path_suffix("/recordings/a.wav"));
+        assert_ne!(first, stable_path_suffix("/recordings/b.wav"));
+    }
+
+    #[test]
+    fn resolves_a_shared_suffix_when_output_stem_collides() {
+        let directory =
+            std::env::temp_dir().join(format!("qwenasr-output-stem-test-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("same.json"), "existing").unwrap();
+        let hashed_stem = format!("same-{}", stable_path_suffix("/recordings/same.wav"));
+        fs::write(directory.join(format!("{hashed_stem}.json")), "existing").unwrap();
+        let options = TranscribeOptions {
+            model_id: "qwen3-asr-0.6b".into(),
+            language: Some("auto".into()),
+            context: String::new(),
+            write_txt: true,
+            write_srt: true,
+            write_json: true,
+            segment_by_punctuation: true,
+            output_dir: Some(directory.to_string_lossy().into_owned()),
+        };
+
+        let stem = resolve_output_stem("/recordings/same.wav", &options).unwrap();
+        assert_eq!(stem, format!("{hashed_stem}-2"));
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -2141,22 +2436,167 @@ mod tests {
 fn write_srt(
     audio_path: &str,
     options: &TranscribeOptions,
+    output_stem: &str,
     segments: &[TranscriptSegment],
 ) -> AppResult<String> {
+    let path = output_path(audio_path, options, output_stem, "srt")?;
+    fs::write(&path, srt::render(segments))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+fn write_txt(
+    audio_path: &str,
+    options: &TranscribeOptions,
+    output_stem: &str,
+    text: &str,
+) -> AppResult<String> {
+    let path = output_path(audio_path, options, output_stem, "txt")?;
+    fs::write(&path, text)?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TranscriptJsonPayload<'a> {
+    schema_version: u32,
+    audio_path: &'a str,
+    detected_language: Option<&'a str>,
+    language_source: &'a str,
+    text: &'a str,
+    segments: &'a [TranscriptSegment],
+    words: &'a [TranscriptWord],
+    alignment_status: &'a str,
+    alignment_coverage: f64,
+    duration_ms: u128,
+    timings: &'a TranscriptionTimings,
+}
+
+fn write_json(
+    audio_path: &str,
+    options: &TranscribeOptions,
+    output_stem: &str,
+    detected_language: Option<&str>,
+    language_source: &str,
+    alignment_status: &str,
+    alignment_coverage: f64,
+    text: &str,
+    segments: &[TranscriptSegment],
+    words: &[TranscriptWord],
+    duration_ms: u128,
+    timings: &TranscriptionTimings,
+) -> AppResult<String> {
+    let path = output_path(audio_path, options, output_stem, "json")?;
+    rewrite_json_payload(
+        &path,
+        audio_path,
+        detected_language,
+        language_source,
+        alignment_status,
+        alignment_coverage,
+        text,
+        segments,
+        words,
+        duration_ms,
+        timings,
+    )?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+fn rewrite_json_payload(
+    path: &Path,
+    audio_path: &str,
+    detected_language: Option<&str>,
+    language_source: &str,
+    alignment_status: &str,
+    alignment_coverage: f64,
+    text: &str,
+    segments: &[TranscriptSegment],
+    words: &[TranscriptWord],
+    duration_ms: u128,
+    timings: &TranscriptionTimings,
+) -> AppResult<()> {
+    let payload = TranscriptJsonPayload {
+        schema_version: 1,
+        audio_path,
+        detected_language,
+        language_source,
+        text,
+        segments,
+        words,
+        alignment_status,
+        alignment_coverage,
+        duration_ms,
+        timings,
+    };
+    let json = serde_json::to_string_pretty(&payload)
+        .map_err(|error| AppError::Io(format!("Could not serialize JSON transcript: {error}")))?;
+    fs::write(&path, format!("{json}\n"))?;
+    Ok(())
+}
+
+fn resolve_output_stem(audio_path: &str, options: &TranscribeOptions) -> AppResult<String> {
     let audio = Path::new(audio_path);
     let stem = audio
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("transcript");
-    let directory = options
+    let directory = output_directory(audio_path, options)?;
+    let extensions = ["txt", "srt", "json"];
+    let collides = extensions
+        .iter()
+        .any(|extension| directory.join(format!("{stem}.{extension}")).exists());
+    if !collides {
+        return Ok(stem.to_string());
+    }
+
+    let suffix = stable_path_suffix(audio_path);
+    let hashed_stem = format!("{stem}-{suffix}");
+    if !output_stem_exists(&directory, &hashed_stem) {
+        return Ok(hashed_stem);
+    }
+
+    for counter in 2u32.. {
+        let candidate = format!("{hashed_stem}-{counter}");
+        if !output_stem_exists(&directory, &candidate) {
+            return Ok(candidate);
+        }
+    }
+
+    unreachable!("output suffix counter overflowed")
+}
+
+fn output_stem_exists(directory: &Path, stem: &str) -> bool {
+    ["txt", "srt", "json"]
+        .iter()
+        .any(|extension| directory.join(format!("{stem}.{extension}")).exists())
+}
+
+fn stable_path_suffix(audio_path: &str) -> String {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in audio_path.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{hash:016x}")
+}
+
+fn output_path(
+    audio_path: &str,
+    options: &TranscribeOptions,
+    output_stem: &str,
+    extension: &str,
+) -> AppResult<PathBuf> {
+    let directory = output_directory(audio_path, options)?;
+    fs::create_dir_all(&directory)?;
+    Ok(directory.join(format!("{output_stem}.{extension}")))
+}
+
+fn output_directory(audio_path: &str, options: &TranscribeOptions) -> AppResult<PathBuf> {
+    let audio = Path::new(audio_path);
+    options
         .output_dir
         .as_deref()
         .map(PathBuf::from)
         .or_else(|| audio.parent().map(Path::to_path_buf))
-        .ok_or_else(|| AppError::Io("Could not resolve output directory.".into()))?;
-    fs::create_dir_all(&directory)?;
-
-    let path = directory.join(format!("{stem}.srt"));
-    fs::write(&path, srt::render(segments))?;
-    Ok(path.to_string_lossy().to_string())
+        .ok_or_else(|| AppError::Io("Could not resolve output directory.".into()))
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
@@ -19,6 +19,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +42,8 @@ import {
   FieldDescription,
   FieldGroup,
   FieldLabel,
+  FieldLegend,
+  FieldSet,
   FieldTitle,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -256,6 +259,8 @@ export function TaskManagerPanel({
 }) {
   const { t } = useLingui();
   const { _ } = useLinguiRuntime();
+  const outputId = useId();
+  const segmentId = useId();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [etaTick, setEtaTick] = useState(() => Date.now());
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
@@ -611,41 +616,95 @@ export function TaskManagerPanel({
                 </FieldDescription>
               </Field>
 
-              <Field orientation="horizontal">
-                <FieldContent>
-                  <FieldTitle id="task-write-srt-label">
-                    <Trans>輸出 SRT 字幕</Trans>
-                  </FieldTitle>
-                  <FieldDescription>
-                    <Trans>建立字幕檔，首次使用時需下載約 1.8 GB 的對齊模型。</Trans>
-                  </FieldDescription>
-                </FieldContent>
-                <Switch
-                  aria-labelledby="task-write-srt-label"
-                  checked={taskDraft.options.writeSrt}
-                  onCheckedChange={(checked) =>
-                    onTaskDraftChange((current) => ({
-                      ...current,
-                      options: {
-                        ...current.options,
-                        writeSrt: checked,
-                      },
-                    }))
-                  }
-                />
-              </Field>
+              <FieldSet>
+                <FieldLegend variant="label"><Trans>輸出格式</Trans></FieldLegend>
+                <FieldDescription>
+                  <Trans>可同時輸出多種格式至指定資料夾。</Trans>
+                </FieldDescription>
+                <FieldGroup className="gap-3">
+                  <Field orientation="horizontal">
+                    <FieldLabel htmlFor={`${outputId}-txt`}>
+                      <FieldContent>
+                        <FieldTitle>TXT <Trans>文字</Trans></FieldTitle>
+                        <FieldDescription id={`${outputId}-txt-description`}><Trans>輸出純文字逐字稿。</Trans></FieldDescription>
+                      </FieldContent>
+                    </FieldLabel>
+                    <Checkbox
+                      id={`${outputId}-txt`}
+                      aria-describedby={`${outputId}-txt-description`}
+                      checked={taskDraft.options.writeTxt}
+                      onCheckedChange={(checked) =>
+                        onTaskDraftChange((current) => ({
+                          ...current,
+                          options: {
+                            ...current.options,
+                            writeTxt: checked === true,
+                          },
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field orientation="horizontal">
+                    <FieldLabel htmlFor={`${outputId}-srt`}>
+                      <FieldContent>
+                        <FieldTitle>SRT <Trans>字幕</Trans></FieldTitle>
+                        <FieldDescription id={`${outputId}-srt-description`}>
+                          <Trans>建立字幕檔，首次使用時需下載約 1.8 GB 的對齊模型。</Trans>
+                        </FieldDescription>
+                      </FieldContent>
+                    </FieldLabel>
+                    <Checkbox
+                      id={`${outputId}-srt`}
+                      aria-describedby={`${outputId}-srt-description`}
+                      checked={taskDraft.options.writeSrt}
+                      onCheckedChange={(checked) =>
+                        onTaskDraftChange((current) => ({
+                          ...current,
+                          options: {
+                            ...current.options,
+                            writeSrt: checked === true,
+                          },
+                        }))
+                      }
+                    />
+                  </Field>
+                  <Field orientation="horizontal">
+                    <FieldLabel htmlFor={`${outputId}-json`}>
+                      <FieldContent>
+                        <FieldTitle>JSON <Trans>資料</Trans></FieldTitle>
+                        <FieldDescription id={`${outputId}-json-description`}><Trans>輸出含分段資料，支援語言會附逐字時間戳。</Trans></FieldDescription>
+                      </FieldContent>
+                    </FieldLabel>
+                    <Checkbox
+                      id={`${outputId}-json`}
+                      aria-describedby={`${outputId}-json-description`}
+                      checked={taskDraft.options.writeJson}
+                      onCheckedChange={(checked) =>
+                        onTaskDraftChange((current) => ({
+                          ...current,
+                          options: {
+                            ...current.options,
+                            writeJson: checked === true,
+                          },
+                        }))
+                      }
+                    />
+                  </Field>
+                </FieldGroup>
+              </FieldSet>
 
               <Field orientation="horizontal">
                 <FieldContent>
-                  <FieldTitle id="task-segment-by-punctuation-label">
+                  <FieldTitle id={`${segmentId}-label`}>
                     <Trans>依標點符號斷句</Trans>
                   </FieldTitle>
-                  <FieldDescription>
+                  <FieldDescription id={`${segmentId}-description`}>
                     <Trans>自動依句號、逗號等標點符號斷句，適用於 SRT 字幕產生等情況。</Trans>
                   </FieldDescription>
                 </FieldContent>
                 <Switch
-                  aria-labelledby="task-segment-by-punctuation-label"
+                  aria-labelledby={`${segmentId}-label`}
+                  aria-describedby={`${segmentId}-description`}
                   checked={taskDraft.options.segmentByPunctuation}
                   onCheckedChange={(checked) =>
                     onTaskDraftChange((current) => ({
@@ -885,9 +944,56 @@ function TaskDetail({
   if (!result) return null;
 
   const resultTimingRows = timingRows(result.timings, _);
+  const detectedLanguage = result.detectedLanguage
+    ? localizedLanguageItems.find((item) => item.value === result.detectedLanguage)?.label ??
+      result.detectedLanguage
+    : t`未提供`;
+  const languageSource =
+    result.languageSource === "specified"
+      ? t`指定語言`
+      : result.languageSource === "detected"
+        ? t`模型偵測`
+        : t`未知來源`;
+  const languageLabel =
+    result.languageSource === "specified" ? t`轉錄語言` : t`偵測語言`;
+  const alignmentStatus =
+    result.alignmentStatus === "forced"
+      ? t`精準對齊`
+      : result.alignmentStatus === "partial"
+        ? t`部分對齊`
+        : t`估算時間`;
+  const alignmentCoverage =
+    typeof result.alignmentCoverage === "number"
+      ? Math.max(0, Math.min(1, result.alignmentCoverage))
+      : 0;
+  const outputPaths = [
+    ["TXT", result.txtPath],
+    ["SRT", result.srtPath],
+    ["JSON", result.jsonPath],
+  ].filter(([, path]) => path) as [string, string][];
 
   return (
     <Tabs defaultValue="transcript" className="min-h-0 flex-1">
+      <div className="task-result-meta text-sm">
+        <span className="text-muted-foreground">{languageLabel}</span>
+        <span className="truncate" title={detectedLanguage}>
+          {detectedLanguage} · {languageSource}
+        </span>
+      </div>
+      <div className="task-result-meta text-sm">
+        <span className="text-muted-foreground"><Trans>時間對齊</Trans></span>
+        <span>{alignmentStatus} · {(alignmentCoverage * 100).toFixed(0)}%</span>
+      </div>
+      {outputPaths.length > 0 ? (
+        <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
+          <span><Trans>輸出檔案</Trans></span>
+          {outputPaths.map(([format, path]) => (
+            <div key={format} className="truncate" title={path}>
+              {format}: {path}
+            </div>
+          ))}
+        </div>
+      ) : null}
       <TabsList className="w-full" variant="line">
         <TabsTrigger value="transcript"><Trans>逐字稿</Trans></TabsTrigger>
         <TabsTrigger value="subtitles"><Trans>字幕</Trans></TabsTrigger>

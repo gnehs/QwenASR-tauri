@@ -127,7 +127,11 @@ pub struct TranscribeOptions {
     pub language: Option<String>,
     #[serde(default)]
     pub context: String,
+    #[serde(default)]
+    pub write_txt: bool,
     pub write_srt: bool,
+    #[serde(default)]
+    pub write_json: bool,
     #[serde(default = "default_true")]
     pub segment_by_punctuation: bool,
     pub output_dir: Option<String>,
@@ -155,6 +159,14 @@ pub struct TranscribeBatchRequest {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSegment {
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptWord {
     pub start_ms: u64,
     pub end_ms: u64,
     pub text: String,
@@ -204,9 +216,16 @@ impl Default for TranscriptionTimings {
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptionResult {
     pub audio_path: String,
+    pub detected_language: Option<String>,
+    pub language_source: String,
     pub text: String,
     pub segments: Vec<TranscriptSegment>,
+    pub words: Vec<TranscriptWord>,
+    pub alignment_status: String,
+    pub alignment_coverage: f64,
+    pub txt_path: Option<String>,
     pub srt_path: Option<String>,
+    pub json_path: Option<String>,
     pub duration_ms: u128,
     pub timings: TranscriptionTimings,
 }
@@ -248,6 +267,8 @@ mod tests {
 
         assert!(options.segment_by_punctuation);
         assert!(options.context.is_empty());
+        assert!(!options.write_txt);
+        assert!(!options.write_json);
     }
 
     #[test]

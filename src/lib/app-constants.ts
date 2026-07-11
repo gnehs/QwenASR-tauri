@@ -202,6 +202,8 @@ export const audioFilters = [
 export const defaultOptions: OptionsState = {
   language: "auto",
   context: "",
+  writeTxt: true,
   writeSrt: true,
+  writeJson: false,
   segmentByPunctuation: true,
 };

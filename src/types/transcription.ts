@@ -36,6 +36,16 @@ export type TranscriptSegment = {
   text: string;
 };
 
+export type TranscriptWord = {
+  startMs: number;
+  endMs: number;
+  text: string;
+};
+
+export type LanguageSource = "specified" | "detected" | "unknown";
+
+export type AlignmentStatus = "forced" | "partial" | "approximate";
+
 export type TranscriptionTimings = {
   audioPrepareMs: number;
   vadMs: number;
@@ -57,7 +67,14 @@ export type TranscriptionResult = {
   audioPath: string;
   text: string;
   segments: TranscriptSegment[];
+  words: TranscriptWord[];
+  detectedLanguage: string | null;
+  languageSource: LanguageSource;
+  alignmentStatus: AlignmentStatus;
+  alignmentCoverage: number;
+  txtPath: string | null;
   srtPath: string | null;
+  jsonPath: string | null;
   durationMs: number;
   timings: TranscriptionTimings;
 };
@@ -87,7 +104,9 @@ export type TranscriptionProgress = {
 export type OptionsState = {
   language: string;
   context: string;
+  writeTxt: boolean;
   writeSrt: boolean;
+  writeJson: boolean;
   segmentByPunctuation: boolean;
 };
 
