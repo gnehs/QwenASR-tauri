@@ -1,92 +1,102 @@
 # QwenASR Studio
 
-QwenASR Studio 是在 Mac 上執行的本機語音轉文字工具。把音訊或影片拖進程式，選好語言與模型後，就能取得逐字稿；需要字幕時，也可以輸出 `.srt` 檔。
+QwenASR Studio is a local speech-to-text desktop app for macOS. Drag and drop audio or video, choose a language and model, and get transcripts. When needed, you can also export `.srt` subtitle files.
 
-音訊、影片與轉錄結果都留在你的電腦上處理，不會上傳到本專案。
+> README in Traditional Chinese: [README.zh.md](README.zh.md)
 
-## 你需要準備什麼
+Audio, video, and transcription results are processed locally on your machine and are not uploaded to this project.
 
-- 搭載 Apple Silicon（M1 或更新）並執行 macOS 14 或更新版本的 Mac
-- 網路連線（第一次下載語音辨識模型時需要）
-- [FFmpeg](https://ffmpeg.org/)：用來讀取與整理音訊
+This app is built on [alan890104/qwen3-asr-rs](https://github.com/alan890104/qwen3-asr-rs) and wrapped as a desktop application.
 
-安裝 FFmpeg 最簡單的方式是使用 [Homebrew](https://brew.sh/)。如果你已經安裝 Homebrew，請開啟「終端機」並輸入：
+## Requirements
+
+- Apple Silicon Mac (M1 or newer) running macOS 14 or later
+- Network connection (required when downloading models for the first time)
+- [FFmpeg](https://ffmpeg.org/) for reading and preparing audio
+
+The easiest way to install FFmpeg is with [Homebrew](https://brew.sh/). If Homebrew is already installed, run:
 
 ```bash
 brew install ffmpeg
 ```
 
-完成後關閉並重新開啟 QwenASR Studio；在程式的「設定」頁面可以確認 FFmpeg 是否已經可用。
+After installation, restart QwenASR Studio and check FFmpeg status in **Settings**.
 
-> QwenASR Studio 使用 Apple Silicon 的 MLX／Metal 加速，因此不支援 Intel 處理器的 Mac。
+> QwenASR Studio uses Apple Silicon MLX/Metal acceleration and does not support Intel Macs.
 
-## 取得 QwenASR Studio
+## Get QwenASR Studio
 
-你可以下載 GitHub Actions 自動建置的最新版程式，這不是正式 Release；每次建置檔只保留 14 天，請選擇最新且顯示成功的建置。
+You can download the latest build from GitHub Actions. This is not an official release; artifacts are kept only for 14 days, so always use the latest successful build.
 
-1. 前往本專案的 [Actions 頁面](https://github.com/gnehs/QwenASR-tauri/actions)。
-2. 在左側選擇 **Build**，再點選最新一筆有綠色勾勾的執行紀錄。
-3. 捲到頁面底部的 **Artifacts**，下載 `qwenasr-studio-macos-arm64-app`。
-4. 解壓縮下載的 ZIP 檔，把裡面的 `QwenASR Studio.app` 拖到「應用程式」資料夾，然後開啟它。
+1. Open this repository's [Actions page](https://github.com/gnehs/QwenASR-tauri/actions).
+2. Select **Build** and open the most recent successful workflow run.
+3. In **Artifacts**, download `qwenasr-studio-macos-arm64-app`.
+4. Unzip the archive, then drag `QwenASR Studio.app` into your Applications folder and open it.
 
-若沒有可用的成功建置，才需要從原始碼執行；請參考 [CONTRIBUTING.md](CONTRIBUTING.md#從-github-下載原始碼)。
+If no successful artifact is available, run from source instead. See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions.
 
-## 第一次轉錄
+## First transcription
 
-1. 開啟程式後，先到「設定」確認 FFmpeg 狀態正常。
-2. 到「模型」下載 `Qwen3-ASR 0.6B`。這是一般情況下最適合開始使用的模型。
-3. 回到「轉錄任務」，把音訊或影片拖進視窗，或按「新增任務」選取檔案。
-4. 選擇模型與語言；不確定語言時可保留「自動偵測」。
-5. 若要字幕，勾選 SRT 輸出；可另外選擇輸出資料夾。
-6. 加入佇列，等待任務完成後在詳細資訊中查看逐字稿與 SRT 檔案位置。
+1. Open the app and verify FFmpeg is working in **Settings**.
+2. In **Models**, download `Qwen3-ASR 0.6B` (recommended starting model).
+3. Go to **Transcription Tasks**, then drag-and-drop your audio/video file or click **Add Task**.
+4. Choose a model and language. If unsure, keep **Auto detect** selected.
+5. Check **Export SRT** when subtitle output is needed, and optionally choose an output folder.
+6. Add to queue and wait for completion. Check transcript and SRT paths in task details.
 
-## 可以處理的檔案
+## Supported files
 
-支援的輸入格式：
+Supported input formats:
 
 ```text
 wav, mp3, m4a, aac, flac, ogg, mp4, mov, mkv, webm
 ```
 
-程式會先在本機暫時整理音訊，再進行辨識；處理結束後會清除暫存檔。
+The app first remuxes audio locally before transcription, and cleans temporary files after each job.
 
-## 模型怎麼選
+## Which model to use
 
-| 模型 | 下載大小約 | 適合情況 |
+| Model | Approx. download size | Suggested use |
 | --- | ---: | --- |
-| Qwen3-ASR 0.6B | 1.9 GB | 建議先從這個模型開始；適合大多數錄音與批次轉錄。 |
-| Qwen3-ASR 1.7B | 4.7 GB | 需要較高準確度，或錄音環境較複雜時使用。 |
-| Qwen3 ForcedAligner 0.6B | 1.8 GB | 只在輸出 SRT 字幕時需要；會由程式自動提示下載。 |
+| Qwen3-ASR 0.6B | 1.9 GB | Recommended for first-time users; suitable for most recordings and batch jobs. |
+| Qwen3-ASR 1.7B | 4.7 GB | Better accuracy for noisy or complex audio. |
+| Qwen3 ForcedAligner 0.6B | 1.8 GB | Required only when exporting SRT; app will suggest when needed. |
 
-模型會下載到 Mac 的應用程式資料夾，不會放進你從 GitHub 下載的專案資料夾。模型較大，請預留足夠磁碟空間並在下載時保持網路連線。
+Downloaded models are stored in your Mac application data folder, not in the checked-out project directory. These are large files; ensure enough disk space and stable connectivity when downloading.
 
-SRT 的精準時間軸由 ForcedAligner 產生，目前支援中文、英文、粵語、法文、德文、義大利文、日文、韓文、葡萄牙文、俄文與西班牙文；其他語言仍可輸出字幕，但時間軸是依片段長度估算。
+SRT timing precision comes from ForcedAligner and currently supports Chinese, English, Cantonese, French, German, Italian, Japanese, Korean, Portuguese, Russian, and Spanish. Other languages still support subtitle export, but timings are estimated from segment lengths.
 
-## 常見問題
+## Troubleshooting
 
-### 程式說找不到 FFmpeg
+### FFmpeg not found
 
-請依上方指示安裝 FFmpeg，然後完全結束並重新開啟程式。如果仍無法使用，請回到「設定」查看狀態與錯誤訊息。
+Install FFmpeg as described above, then fully quit and relaunch the app. If the issue remains, check status and error messages in **Settings**.
 
-### 模型下載很久或失敗
+### Model download is slow or fails
 
-模型檔案很大，下載時間取決於網路速度。請確認網路連線穩定與磁碟空間足夠，再重新嘗試下載。
+Model files are large and download speed depends on your network. Confirm a stable connection and sufficient disk space, then retry.
 
-### SRT 檔在哪裡
+### Where is the SRT file?
 
-有選擇輸出資料夾時，SRT 會儲存在該資料夾；未選擇時，會放在原始音訊或影片的同一個資料夾。
+If you choose an output folder, SRT is saved there. Otherwise, it is placed in the same folder as the original audio/video file.
 
-## 隱私與資料
+## Privacy
 
-- 轉錄在本機完成；音訊、影片、逐字稿與 SRT 不會由程式上傳到本專案。
-- 模型由程式從 Hugging Face 下載到本機。
-- 音訊和逐字稿可能含有敏感內容；回報問題時，請不要貼上真實檔案、完整逐字稿或可識別個人的檔名。
+- Transcription happens locally. Audio/video, transcripts, and SRT files are not uploaded.
+- Models are downloaded to your local machine directly from Hugging Face.
+- Files may contain sensitive content; do not share raw files or full transcripts in issue reports.
 
-## 想協助改進？
+## Contributing
 
-謝謝！如果你想回報問題、提出功能建議，或修改程式，請閱讀 [貢獻指南](CONTRIBUTING.md)。其中包含從 GitHub 下載原始碼、設定開發環境、測試與送出變更的說明。
+Thank you for your interest. For bug reports, feature ideas, or code changes, check the [contributing guide](CONTRIBUTING.md) for instructions on cloning, setup, testing, and submitting updates.
 
-## 相關連結
+## License and Credits
+
+- This project is licensed under the [MIT License](LICENSE).
+- QwenASR Studio is built on [alan890104/qwen3-asr-rs](https://github.com/alan890104/qwen3-asr-rs), which is also open source.
+- The app uses models from the Qwen3-ASR family provided by QwenLM.
+
+## Related Links
 
 - [Qwen3-ASR GitHub](https://github.com/QwenLM/Qwen3-ASR)
 - [Qwen3-ASR Hugging Face](https://huggingface.co/collections/Qwen/qwen3-asr)
