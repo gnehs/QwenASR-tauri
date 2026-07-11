@@ -125,6 +125,8 @@ pub struct FfmpegStatus {
 pub struct TranscribeOptions {
     pub model_id: String,
     pub language: Option<String>,
+    #[serde(default)]
+    pub context: String,
     pub write_srt: bool,
     #[serde(default = "default_true")]
     pub segment_by_punctuation: bool,
@@ -245,5 +247,16 @@ mod tests {
         .unwrap();
 
         assert!(options.segment_by_punctuation);
+        assert!(options.context.is_empty());
+    }
+
+    #[test]
+    fn deserializes_recognition_context() {
+        let options: TranscribeOptions = serde_json::from_str(
+            r#"{"modelId":"qwen3-asr-0.6b","language":"Chinese","context":"QwenASR、Tauri","writeSrt":false,"segmentByPunctuation":true,"outputDir":null}"#,
+        )
+        .unwrap();
+
+        assert_eq!(options.context, "QwenASR、Tauri");
     }
 }

@@ -104,16 +104,36 @@ impl AsrInference {
 
     /// Transcribe an audio file.
     pub fn transcribe(&self, audio_path: &str, language: Option<&str>) -> Result<TranscribeResult> {
+        self.transcribe_with_context(audio_path, "", language)
+    }
+
+    /// Transcribe an audio file with optional context that guides recognition.
+    pub fn transcribe_with_context(
+        &self,
+        audio_path: &str,
+        context: &str,
+        language: Option<&str>,
+    ) -> Result<TranscribeResult> {
         tracing::info!("Loading audio from {}", audio_path);
         let samples = audio::load_audio(audio_path, MEL_SAMPLE_RATE)?;
 
-        self.transcribe_samples(&samples, language)
+        self.transcribe_samples_with_context(&samples, context, language)
     }
 
     /// Transcribe decoded mono audio samples at 16 kHz.
     pub fn transcribe_samples(
         &self,
         samples: &[f32],
+        language: Option<&str>,
+    ) -> Result<TranscribeResult> {
+        self.transcribe_samples_with_context(samples, "", language)
+    }
+
+    /// Transcribe decoded mono audio samples at 16 kHz with optional context.
+    pub fn transcribe_samples_with_context(
+        &self,
+        samples: &[f32],
+        context: &str,
         language: Option<&str>,
     ) -> Result<TranscribeResult> {
         let inference_started = Instant::now();
@@ -140,7 +160,7 @@ impl AsrInference {
         // Step 4: Build input token sequence
         let prompt_started = Instant::now();
         let (input_ids, audio_positions) =
-            self.build_prompt(num_audio_tokens, language)?;
+            self.build_prompt(num_audio_tokens, context, language)?;
         let seq_len = input_ids.len();
 
         // Step 5: Build embeddings with audio injection
@@ -262,19 +282,23 @@ impl AsrInference {
     fn build_prompt(
         &self,
         num_audio_tokens: usize,
+        context: &str,
         language: Option<&str>,
     ) -> Result<(Vec<i64>, Vec<usize>)> {
         let mut tokens: Vec<i64> = vec![
             151644, // <|im_start|>
             8948,   // system
             198,    // \n
+        ];
+        tokens.extend(self.tokenizer.encode(context.trim())?);
+        tokens.extend_from_slice(&[
             151645, // <|im_end|>
             198,    // \n
             151644, // <|im_start|>
             872,    // user
             198,    // \n
             151669, // <|audio_start|>
-        ];
+        ]);
 
         let audio_start_pos = tokens.len();
         for _ in 0..num_audio_tokens {

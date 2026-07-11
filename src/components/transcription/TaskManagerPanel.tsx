@@ -70,6 +70,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Table,
   TableBody,
@@ -504,7 +505,7 @@ export function TaskManagerPanel({
           <DialogHeader>
             <DialogTitle><Trans>新增轉錄任務</Trans></DialogTitle>
             <DialogDescription>
-              <Trans>{taskDraft.files.length} 個檔案會使用相同模型、語言、斷句方式與輸出資料夾。</Trans>
+              <Trans>{taskDraft.files.length} 個檔案會使用相同模型、語言、提示詞、斷句方式與輸出資料夾。</Trans>
             </DialogDescription>
           </DialogHeader>
 
@@ -586,6 +587,28 @@ export function TaskManagerPanel({
                     <Trans>選取</Trans>
                   </Button>
                 </div>
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="task-context"><Trans>辨識提示詞</Trans></FieldLabel>
+                <Textarea
+                  id="task-context"
+                  className="min-h-24 resize-y"
+                  value={taskDraft.options.context}
+                  placeholder={t`例如：AI、LLM、台灣`}
+                  onChange={(event) =>
+                    onTaskDraftChange((current) => ({
+                      ...current,
+                      options: {
+                        ...current.options,
+                        context: event.target.value,
+                      },
+                    }))
+                  }
+                />
+                <FieldDescription>
+                  <Trans>輸入容易辨識錯誤的人名、專有名詞或對話背景，幫助模型選擇正確用字。</Trans>
+                </FieldDescription>
               </Field>
 
               <Field orientation="horizontal">

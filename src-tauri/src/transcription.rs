@@ -970,7 +970,11 @@ fn transcribe_with_context(
         let chunk_samples = normalized_samples[chunk.start_sample..chunk.end_sample].to_vec();
         let chunk_samples_f32 = normalized_i16_to_f32(&chunk_samples);
         let raw_result = engine
-            .transcribe_samples(&chunk_samples_f32, asr_language.as_deref())
+            .transcribe_samples_with_context(
+                &chunk_samples_f32,
+                &options.context,
+                asr_language.as_deref(),
+            )
             .map_err(|error| {
                 AppError::Transcription(format!(
                     "Qwen3-ASR failed to transcribe chunk {chunk_index}/{total_chunks}: {error}"
@@ -2098,6 +2102,7 @@ mod tests {
         let options = |language: &str, write_srt: bool| TranscribeOptions {
             model_id: "qwen3-asr-0.6b".into(),
             language: Some(language.into()),
+            context: String::new(),
             write_srt,
             segment_by_punctuation: true,
             output_dir: None,

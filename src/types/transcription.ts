@@ -86,6 +86,7 @@ export type TranscriptionProgress = {
 
 export type OptionsState = {
   language: string;
+  context: string;
   writeSrt: boolean;
   segmentByPunctuation: boolean;
 };
