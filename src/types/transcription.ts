@@ -90,7 +90,12 @@ export type OptionsState = {
   segmentByPunctuation: boolean;
 };
 
-export type TaskStatus = "queued" | "running" | "completed" | "failed";
+export type TaskStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 export type TranscriptionTask = {
   id: string;

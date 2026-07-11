@@ -138,6 +138,7 @@ fn default_true() -> bool {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscribeFileRequest {
+    pub task_id: String,
     pub audio_path: String,
     pub options: TranscribeOptions,
 }

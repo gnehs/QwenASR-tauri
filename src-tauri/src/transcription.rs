@@ -1,6 +1,10 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, OnceLock,
+};
 use std::time::Instant;
 
 use opencc_rs::{Config, OpenCC};
@@ -98,15 +102,87 @@ const ASR_LANGUAGES: &[&str] = &[
     "Minnan language",
 ];
 
+pub type CancellationToken = Arc<AtomicBool>;
+
+#[derive(Clone, Default)]
+pub struct TranscriptionControl {
+    active: Arc<Mutex<HashMap<String, CancellationToken>>>,
+}
+
+impl TranscriptionControl {
+    pub fn register(&self, task_id: &str) -> AppResult<CancellationToken> {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if active.contains_key(task_id) {
+            return Err(AppError::Transcription(
+                "A transcription task with this ID is already running.".into(),
+            ));
+        }
+
+        let token = Arc::new(AtomicBool::new(false));
+        active.insert(task_id.to_string(), Arc::clone(&token));
+        Ok(token)
+    }
+
+    pub fn cancel(&self, task_id: &str) -> bool {
+        let active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let Some(token) = active.get(task_id) else {
+            return false;
+        };
+
+        token.store(true, Ordering::Release);
+        true
+    }
+
+    pub fn remove(&self, task_id: &str) {
+        let mut active = self
+            .active
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        active.remove(task_id);
+    }
+}
+
+fn check_cancelled(cancel: &CancellationToken) -> AppResult<()> {
+    if cancel.load(Ordering::Acquire) {
+        Err(AppError::Cancelled("轉錄已終止".into()))
+    } else {
+        Ok(())
+    }
+}
+
 pub fn transcribe_file(
     app: AppHandle,
     request: TranscribeFileRequest,
+    cancel: CancellationToken,
 ) -> AppResult<TranscriptionResult> {
     let started = Instant::now();
     let audio_path = request.audio_path.clone();
 
-    let result = transcribe_file_inner(&app, started, request);
+    let result = transcribe_file_inner(&app, started, request, &cancel);
     if let Err(error) = &result {
+        if matches!(error, AppError::Cancelled(_)) {
+            emit_progress(
+                &app,
+                started,
+                "cancelled",
+                "cancelled",
+                "轉錄已終止",
+                Some(&audio_path),
+                Some(&audio_path),
+                1,
+                1,
+                100.0,
+                None,
+            );
+            return result;
+        }
+
         emit_progress(
             &app,
             started,
@@ -129,7 +205,9 @@ fn transcribe_file_inner(
     app: &AppHandle,
     started: Instant,
     request: TranscribeFileRequest,
+    cancel: &CancellationToken,
 ) -> AppResult<TranscriptionResult> {
+    check_cancelled(cancel)?;
     emit_progress(
         app,
         started,
@@ -145,6 +223,7 @@ fn transcribe_file_inner(
     );
 
     let model_path = ensure_model(&request.options.model_id)?;
+    check_cancelled(cancel)?;
     let use_forced_aligner = should_use_forced_aligner(&request.options);
     let aligner_path = use_forced_aligner
         .then(|| ensure_model(FORCED_ALIGNER_MODEL_ID))
@@ -165,6 +244,7 @@ fn transcribe_file_inner(
 
     let device = default_device();
     let engine = load_engine(&model_path, device)?;
+    check_cancelled(cancel)?;
     let asr_range_end = if use_forced_aligner {
         progress_between(
             TRANSCRIPTION_WORK_START_PERCENT,
@@ -188,6 +268,7 @@ fn transcribe_file_inner(
         1,
         TRANSCRIPTION_WORK_START_PERCENT,
         asr_range_end,
+        cancel,
     )?;
     pending.range_start = if use_forced_aligner {
         progress_between(
@@ -204,6 +285,7 @@ fn transcribe_file_inner(
         ALIGN_PHASE_END,
     );
     drop(engine);
+    check_cancelled(cancel)?;
     let aligner = load_aligner_after_transcription(
         app,
         started,
@@ -218,7 +300,9 @@ fn transcribe_file_inner(
             ALIGN_PHASE_START,
         ),
     )?;
-    let mut result = finalize_transcription_with_context(app, started, aligner.as_ref(), pending)?;
+    check_cancelled(cancel)?;
+    let mut result =
+        finalize_transcription_with_context(app, started, aligner.as_ref(), pending, cancel)?;
     result.duration_ms = started.elapsed().as_millis();
     result.timings.total_ms = result.duration_ms;
 
@@ -244,6 +328,7 @@ pub fn transcribe_batch(
     request: TranscribeBatchRequest,
 ) -> AppResult<Vec<TranscriptionResult>> {
     let started = Instant::now();
+    let cancel = Arc::new(AtomicBool::new(false));
     if request.audio_paths.is_empty() {
         emit_progress(
             &app,
@@ -331,6 +416,7 @@ pub fn transcribe_batch(
             total,
             range_start,
             range_end,
+            &cancel,
         ) {
             Ok(result) => result,
             Err(error) => {
@@ -399,26 +485,31 @@ pub fn transcribe_batch(
         let audio_path = pending.audio_path.clone();
         let file_index = pending.file_index;
         let range_end = pending.range_end;
-        let result =
-            match finalize_transcription_with_context(&app, started, aligner.as_ref(), pending) {
-                Ok(result) => result,
-                Err(error) => {
-                    emit_progress(
-                        &app,
-                        started,
-                        "error",
-                        "error",
-                        &format!("轉錄失敗：{error}"),
-                        Some(&audio_path),
-                        Some(&audio_path),
-                        file_index,
-                        total,
-                        range_end,
-                        None,
-                    );
-                    return Err(error);
-                }
-            };
+        let result = match finalize_transcription_with_context(
+            &app,
+            started,
+            aligner.as_ref(),
+            pending,
+            &cancel,
+        ) {
+            Ok(result) => result,
+            Err(error) => {
+                emit_progress(
+                    &app,
+                    started,
+                    "error",
+                    "error",
+                    &format!("轉錄失敗：{error}"),
+                    Some(&audio_path),
+                    Some(&audio_path),
+                    file_index,
+                    total,
+                    range_end,
+                    None,
+                );
+                return Err(error);
+            }
+        };
         results.push(result);
     }
 
@@ -724,7 +815,9 @@ fn transcribe_with_context(
     total_files: usize,
     range_start: f64,
     range_end: f64,
+    cancel: &CancellationToken,
 ) -> AppResult<PendingTranscription> {
+    check_cancelled(cancel)?;
     let started = Instant::now();
     let mut timings = TranscriptionTimings::default();
     emit_progress(
@@ -744,6 +837,7 @@ fn transcribe_with_context(
     let audio_prepare_started = Instant::now();
     let prepared_audio = audio::prepare_audio_for_asr(audio_path)?;
     let normalized_samples = audio::read_normalized_i16(prepared_audio.inference_path())?;
+    check_cancelled(cancel)?;
     timings.audio_prepare_ms = audio_prepare_started.elapsed().as_millis();
     let analysis_percent = progress_between(range_start, range_end, VAD_PHASE_START);
     emit_progress(
@@ -763,7 +857,12 @@ fn transcribe_with_context(
     let mut last_vad_percent = analysis_percent;
     let mut last_vad_message = "";
     let vad_started = Instant::now();
+    let cancel_for_vad = Arc::clone(cancel);
     let vad_analysis = vad::analyze_with_progress(&normalized_samples, |vad_progress| {
+        if cancel_for_vad.load(Ordering::Relaxed) {
+            return;
+        }
+
         let file_ratio = progress_between(VAD_PHASE_START, VAD_PHASE_END, vad_progress.ratio);
         let percent = progress_between(range_start, range_end, file_ratio);
         let message_changed = vad_progress.message != last_vad_message;
@@ -786,6 +885,7 @@ fn transcribe_with_context(
             );
         }
     })?;
+    check_cancelled(cancel)?;
     timings.vad_ms = vad_started.elapsed().as_millis();
     let chunks = vad_analysis.chunks;
     let total_chunk_audio_ms = vad_analysis.chunk_audio_ms.max(1);
@@ -836,6 +936,7 @@ fn transcribe_with_context(
     let asr_started = Instant::now();
 
     for (index, chunk) in chunks.iter().enumerate() {
+        check_cancelled(cancel)?;
         let chunk_index = index + 1;
         let before_ratio = processed_asr_work_ms as f64 / total_asr_work_ms as f64;
         let before_percent = progress_between(
@@ -875,6 +976,7 @@ fn transcribe_with_context(
                     "Qwen3-ASR failed to transcribe chunk {chunk_index}/{total_chunks}: {error}"
                 ))
             })?;
+        check_cancelled(cancel)?;
         let asr_chunk_elapsed_ms = asr_chunk_started.elapsed().as_millis();
         timings.asr_ms = timings.asr_ms.saturating_add(asr_chunk_elapsed_ms);
         add_inference_timings(&mut timings, &raw_result.timings);
@@ -961,7 +1063,9 @@ fn finalize_transcription_with_context(
     progress_started: Instant,
     aligner: Option<&ForcedAlignerInference>,
     mut pending: PendingTranscription,
+    cancel: &CancellationToken,
 ) -> AppResult<TranscriptionResult> {
+    check_cancelled(cancel)?;
     let alignment_started = Instant::now();
     let vad_estimated_segments = pending.vad_estimated_segments.clone();
     let output_language = normalize_output_language(pending.options.language.as_deref());
@@ -975,6 +1079,7 @@ fn finalize_transcription_with_context(
     let mut segments = Vec::new();
 
     for chunk in pending.chunks {
+        check_cancelled(cancel)?;
         let before_ratio = processed_alignment_ms as f64 / total_alignment_ms as f64;
         let before_percent = progress_between(pending.range_start, pending.range_end, before_ratio);
         let before_eta_ms = estimate_remaining_ms(
@@ -1015,6 +1120,7 @@ fn finalize_transcription_with_context(
                             chunk.chunk_index, pending.total_chunks
                         ))
                     })?;
+                check_cancelled(cancel)?;
                 build_aligned_segments_with_offset(
                     &chunk.raw_text,
                     &aligned_units,
@@ -1076,6 +1182,7 @@ fn finalize_transcription_with_context(
 
     let finalize_started = Instant::now();
     let text = pending.transcript_parts.join("\n");
+    check_cancelled(cancel)?;
     let srt_path = if pending.options.write_srt {
         Some(write_srt(&pending.audio_path, &pending.options, &segments)?)
     } else {
@@ -2000,6 +2107,29 @@ mod tests {
         assert!(should_use_forced_aligner(&options("Chinese", true)));
         assert!(!should_use_forced_aligner(&options("Arabic", true)));
         assert!(!should_use_forced_aligner(&options("Chinese", false)));
+    }
+
+    #[test]
+    fn cancellation_control_targets_only_the_registered_task() {
+        let control = TranscriptionControl::default();
+        let first = control.register("first").unwrap();
+        let second = control.register("second").unwrap();
+
+        assert!(control.cancel("first"));
+        assert!(first.load(Ordering::Acquire));
+        assert!(!second.load(Ordering::Acquire));
+        assert!(!control.cancel("missing"));
+
+        control.remove("first");
+        assert!(!control.cancel("first"));
+    }
+
+    #[test]
+    fn cancellation_control_rejects_duplicate_task_ids() {
+        let control = TranscriptionControl::default();
+        control.register("same-task").unwrap();
+
+        assert!(control.register("same-task").is_err());
     }
 }
 

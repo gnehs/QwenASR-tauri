@@ -16,6 +16,8 @@ pub enum AppError {
     Download(String),
     #[error("Transcription error: {0}")]
     Transcription(String),
+    #[error("{0}")]
+    Cancelled(String),
 }
 
 impl From<std::io::Error> for AppError {

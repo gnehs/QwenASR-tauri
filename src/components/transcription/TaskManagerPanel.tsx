@@ -7,6 +7,7 @@ import { Trans, useLingui } from "@lingui/react/macro";
 import {
   ArchiveIcon,
   ChevronRightIcon,
+  CircleStopIcon,
   DownloadIcon,
   FileAudioIcon,
   FolderOpenIcon,
@@ -108,6 +109,7 @@ const statusMeta: Record<
   running: { badge: "default" },
   completed: { badge: "secondary" },
   failed: { badge: "destructive" },
+  cancelled: { badge: "secondary" },
 };
 
 const statusMessages: Record<TaskStatus, MessageDescriptor> = {
@@ -115,6 +117,7 @@ const statusMessages: Record<TaskStatus, MessageDescriptor> = {
   running: msg`轉錄中`,
   completed: msg`完成`,
   failed: msg`失敗`,
+  cancelled: msg`已終止`,
 };
 
 type Translate = ReturnType<typeof useLingui>["t"];
@@ -222,8 +225,10 @@ export function TaskManagerPanel({
   onTaskDialogOpenChange,
   onModelDownloadDialogOpenChange,
   onConfirmTaskDraft,
+  onCancelTask,
   onRemoveTask,
   onRetryTask,
+  cancellingTaskId,
 }: {
   tasks: TranscriptionTask[];
   models: ModelStatus[];
@@ -244,8 +249,10 @@ export function TaskManagerPanel({
   onTaskDialogOpenChange: (open: boolean) => void;
   onModelDownloadDialogOpenChange: (open: boolean) => void;
   onConfirmTaskDraft: () => void;
+  onCancelTask: (taskId: string) => void;
   onRemoveTask: (taskId: string) => void;
   onRetryTask: (taskId: string) => void;
+  cancellingTaskId: string | null;
 }) {
   const { t } = useLingui();
   const { _ } = useLinguiRuntime();
@@ -381,20 +388,42 @@ export function TaskManagerPanel({
                                   </span>
                                 </Button>
                               ) : null}
-                              <Button
-                                variant="ghost"
-                                size="icon-sm"
-                                disabled={task.status === "running"}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  onRemoveTask(task.id);
-                                }}
-                              >
-                                <Trash2Icon data-icon="inline-start" />
-                                <span className="sr-only">
+                              {task.status === "running" ? (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  disabled={cancellingTaskId === task.id}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onCancelTask(task.id);
+                                  }}
+                                >
+                                  {cancellingTaskId === task.id ? (
+                                    <Spinner />
+                                  ) : (
+                                    <CircleStopIcon data-icon="inline-start" />
+                                  )}
+                                  <span className="sr-only">
+                                    {cancellingTaskId === task.id
+                                      ? t`終止中 ${basename(task.audioPath)}`
+                                      : t`終止 ${basename(task.audioPath)}`}
+                                  </span>
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="icon-sm"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    onRemoveTask(task.id);
+                                  }}
+                                >
+                                  <Trash2Icon data-icon="inline-start" />
+                                  <span className="sr-only">
                                     {t`移除 ${basename(task.audioPath)}`}
-                                </span>
-                              </Button>
+                                  </span>
+                                </Button>
+                              )}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -737,6 +766,16 @@ function TaskDetail({
         <TriangleAlertIcon />
         <AlertTitle><Trans>轉錄失敗</Trans></AlertTitle>
         <AlertDescription>{task.error ?? <Trans>未知錯誤</Trans>}</AlertDescription>
+      </Alert>
+    );
+  }
+
+  if (task.status === "cancelled") {
+    return (
+      <Alert>
+        <CircleStopIcon />
+        <AlertTitle><Trans>轉錄已終止</Trans></AlertTitle>
+        <AlertDescription><Trans>此任務已停止，未產生新的轉錄結果。</Trans></AlertDescription>
       </Alert>
     );
   }

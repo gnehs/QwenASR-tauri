@@ -26,7 +26,10 @@ import "./App.css";
 function App() {
   const workspace = useTranscriptionWorkspace();
   const hasFinishedTasks = workspace.tasks.some(
-    (task) => task.status === "completed" || task.status === "failed",
+    (task) =>
+      task.status === "completed" ||
+      task.status === "failed" ||
+      task.status === "cancelled",
   );
 
   return (
@@ -135,8 +138,10 @@ function App() {
                 workspace.setTaskModelDownloadDialogOpen
               }
               onConfirmTaskDraft={workspace.confirmTaskDraft}
+              onCancelTask={workspace.cancelTask}
               onRemoveTask={workspace.removeTask}
               onRetryTask={workspace.retryTask}
+              cancellingTaskId={workspace.cancellingTaskId}
             />
           </div>
         </section>

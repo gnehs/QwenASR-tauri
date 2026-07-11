@@ -148,6 +148,14 @@ function buildOptionsPayload(task: TranscriptionTask) {
   };
 }
 
+function isInvokeErrorKind(error: unknown, kind: string) {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      (error as { kind?: unknown }).kind === kind,
+  );
+}
+
 function shouldUseForcedAligner(options: OptionsState) {
   if (!options.writeSrt) return false;
 
@@ -296,8 +304,10 @@ export function useTranscriptionWorkspace() {
     string | null
   >(null);
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
+  const [cancellingTaskId, setCancellingTaskId] = useState<string | null>(null);
   const runningTaskIdRef = useRef<string | null>(null);
   const runningTaskAudioPathRef = useRef<string | null>(null);
+  const cancellingTaskIdRef = useRef<string | null>(null);
   const openTaskDialogRef = useRef<(paths: string[]) => void>(() => {});
   const downloadSpeedMovingAverageRef =
     useRef<DownloadSpeedMovingAverageTracker | null>(null);
@@ -388,6 +398,7 @@ export function useTranscriptionWorkspace() {
       // the current file, which does not match the task queue's end-to-end ordering.
       const result = await invoke<TranscriptionResult>("transcribe_file", {
         request: {
+          taskId: task.id,
           audioPath: task.audioPath,
           options: buildOptionsPayload(task),
         },
@@ -416,26 +427,48 @@ export function useTranscriptionWorkspace() {
         t`，SRT 已輸出`,
       );
     } catch (error) {
-      const message = formatInvokeError(error);
-      setTasks((current) =>
-        current.map((item) =>
-          item.id === task.id
-            ? {
-                ...item,
-                status: "failed",
-                error: message,
-                progressUpdatedAt: null,
-                completedAt: Date.now(),
-              }
+      if (isInvokeErrorKind(error, "cancelled")) {
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === task.id
+              ? {
+                  ...item,
+                  status: "cancelled",
+                  progress: null,
+                  progressUpdatedAt: null,
+                  error: null,
+                  completedAt: Date.now(),
+                }
               : item,
-        ),
-      );
-      toast.error(t`${basename(task.audioPath)} 轉錄失敗`, {
-        description: message,
-      });
+          ),
+        );
+        toast.info(t`${basename(task.audioPath)} 已終止`);
+      } else {
+        const message = formatInvokeError(error);
+        setTasks((current) =>
+          current.map((item) =>
+            item.id === task.id
+              ? {
+                  ...item,
+                  status: "failed",
+                  error: message,
+                  progressUpdatedAt: null,
+                  completedAt: Date.now(),
+                }
+              : item,
+          ),
+        );
+        toast.error(t`${basename(task.audioPath)} 轉錄失敗`, {
+          description: message,
+        });
+      }
     } finally {
       runningTaskIdRef.current = null;
       runningTaskAudioPathRef.current = null;
+      if (cancellingTaskIdRef.current === task.id) {
+        cancellingTaskIdRef.current = null;
+        setCancellingTaskId(null);
+      }
       setTranscriptionProgress(null);
     }
   }, [t]);
@@ -762,6 +795,29 @@ export function useTranscriptionWorkspace() {
     }
   }
 
+  async function cancelTask(taskId: string) {
+    const task = tasks.find((item) => item.id === taskId);
+    if (task?.status !== "running" || cancellingTaskIdRef.current) return;
+
+    cancellingTaskIdRef.current = taskId;
+    setCancellingTaskId(taskId);
+
+    try {
+      const accepted = await invoke<boolean>("cancel_transcription", {
+        taskId,
+      });
+      if (!accepted) {
+        cancellingTaskIdRef.current = null;
+        setCancellingTaskId(null);
+        toast.error(t`任務已結束，無法終止`);
+      }
+    } catch (error) {
+      cancellingTaskIdRef.current = null;
+      setCancellingTaskId(null);
+      toast.error(formatInvokeError(error));
+    }
+  }
+
   function removeTask(taskId: string) {
     const task = tasks.find((item) => item.id === taskId);
     if (task?.status === "running") {
@@ -818,6 +874,7 @@ export function useTranscriptionWorkspace() {
     isTaskModelDownloadDialogOpen,
     taskModelDownloadError,
     deletingModelId,
+    cancellingTaskId,
     isTranscribing,
     isTaskDialogOpen,
     isDraggingFiles,
@@ -831,6 +888,7 @@ export function useTranscriptionWorkspace() {
     pickFilesForTasks,
     pickTaskOutputDir,
     confirmTaskDraft,
+    cancelTask,
     removeTask,
     retryTask,
     clearFinishedTasks,

@@ -12,7 +12,7 @@ use error::AppResult;
 use models::{
     FfmpegStatus, ModelStatus, TranscribeBatchRequest, TranscribeFileRequest, TranscriptionResult,
 };
-use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, State, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "macos")]
 use tauri::{LogicalPosition, TitleBarStyle};
@@ -47,11 +47,26 @@ async fn delete_model(model_id: String) -> AppResult<ModelStatus> {
 #[tauri::command]
 async fn transcribe_file(
     app: AppHandle,
+    control: State<'_, transcription::TranscriptionControl>,
     request: TranscribeFileRequest,
 ) -> AppResult<TranscriptionResult> {
-    tauri::async_runtime::spawn_blocking(move || transcription::transcribe_file(app, request))
-        .await
-        .map_err(|error| error::AppError::Transcription(error.to_string()))?
+    let task_id = request.task_id.clone();
+    let cancel = control.register(&task_id)?;
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        transcription::transcribe_file(app, request, cancel)
+    })
+    .await
+    .map_err(|error| error::AppError::Transcription(error.to_string()));
+    control.remove(&task_id);
+    result?
+}
+
+#[tauri::command]
+fn cancel_transcription(
+    control: State<'_, transcription::TranscriptionControl>,
+    task_id: String,
+) -> bool {
+    control.cancel(&task_id)
 }
 
 #[tauri::command]
@@ -67,6 +82,7 @@ async fn transcribe_batch(
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(transcription::TranscriptionControl::default())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
@@ -106,6 +122,7 @@ pub fn run() {
             download_model,
             delete_model,
             transcribe_file,
+            cancel_transcription,
             transcribe_batch
         ])
         .run(tauri::generate_context!())
