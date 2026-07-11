@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
+import type { MessageDescriptor } from "@lingui/core";
+import { msg } from "@lingui/core/macro";
 import { useLingui as useLinguiRuntime } from "@lingui/react";
 import { Trans, useLingui } from "@lingui/react/macro";
 import {
@@ -108,19 +110,18 @@ const statusMeta: Record<
   failed: { badge: "destructive" },
 };
 
-type Translate = ReturnType<typeof useLingui>["t"];
+const statusMessages: Record<TaskStatus, MessageDescriptor> = {
+  queued: msg`排隊中`,
+  running: msg`轉錄中`,
+  completed: msg`完成`,
+  failed: msg`失敗`,
+};
 
-function statusLabel(status: TaskStatus, t: Translate) {
-  switch (status) {
-    case "queued":
-      return t`排隊中`;
-    case "running":
-      return t`轉錄中`;
-    case "completed":
-      return t`完成`;
-    case "failed":
-      return t`失敗`;
-  }
+type Translate = ReturnType<typeof useLingui>["t"];
+type RuntimeTranslate = ReturnType<typeof useLinguiRuntime>["_"];
+
+function statusLabel(status: TaskStatus, translate: RuntimeTranslate) {
+  return translate(statusMessages[status]);
 }
 
 function taskPercent(task: TranscriptionTask) {
@@ -343,7 +344,7 @@ export function TaskManagerPanel({
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={meta.badge}>{statusLabel(task.status, t)}</Badge>
+                            <Badge variant={meta.badge}>{statusLabel(task.status, _)}</Badge>
                           </TableCell>
                           <TableCell className="task-progress-cell">
                             <div className="task-progress-stack">
@@ -446,7 +447,7 @@ export function TaskManagerPanel({
               <SheetTitle><Trans>任務詳情</Trans></SheetTitle>
               {selectedTask ? (
                 <Badge variant={statusMeta[selectedTask.status].badge}>
-                  {statusLabel(selectedTask.status, t)}
+                  {statusLabel(selectedTask.status, _)}
                 </Badge>
               ) : null}
             </div>
