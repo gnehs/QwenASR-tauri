@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
@@ -841,6 +841,27 @@ function TaskDetail({
   const { _ } = useLinguiRuntime();
   const progress = task.progress;
   const result = task.result;
+  const partialSegments = progress?.partialSegments ?? [];
+  const liveTranscriptViewportRef = useRef<HTMLDivElement>(null);
+  const latestPartialSegment =
+    partialSegments.length > 0
+      ? partialSegments[partialSegments.length - 1]
+      : null;
+  const latestPartialSegmentFingerprint = latestPartialSegment
+    ? `${latestPartialSegment.startMs}-${latestPartialSegment.text}-${latestPartialSegment.endMs}`
+    : "";
+
+  useEffect(() => {
+    if (partialSegments.length === 0) return;
+    const viewport = liveTranscriptViewportRef.current;
+    if (!viewport) return;
+
+    const animationFrameId = requestAnimationFrame(() => {
+      viewport.scrollTop = viewport.scrollHeight;
+    });
+
+    return () => window.cancelAnimationFrame(animationFrameId);
+  }, [partialSegments.length, latestPartialSegmentFingerprint]);
 
   if (task.status === "failed") {
     return (
@@ -879,8 +900,6 @@ function TaskDetail({
   }
 
   if (task.status === "running") {
-    const partialSegments = progress?.partialSegments ?? [];
-
     return (
       <div className="task-running-detail">
         <TranscriptionProgressPanel
@@ -898,38 +917,31 @@ function TaskDetail({
               <div id="live-transcript-title" className="text-sm font-medium">
                 <Trans>即時逐字稿</Trans>
               </div>
-              <p className="text-xs text-muted-foreground">
-                <Trans>時間為 VAD 推估，內容會隨轉錄進度更新。</Trans>
-              </p>
             </div>
             <Badge variant="outline"><Trans>{partialSegments.length} 段</Trans></Badge>
           </div>
           {partialSegments.length > 0 ? (
-            <ScrollArea
-              className="task-partial-scroll"
-              viewportClassName="scroll-fade"
-            >
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-40"><Trans>時間</Trans></TableHead>
-                    <TableHead><Trans>文字</Trans></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {partialSegments.map((segment, index) => (
-                    <TableRow key={`${segment.startMs}-${index}`}>
-                      <TableCell className="whitespace-nowrap align-top font-mono text-xs text-muted-foreground">
-                        {formatTimestamp(segment.startMs)} -{" "}
-                        {formatTimestamp(segment.endMs)}
-                      </TableCell>
-                      <TableCell className="srt-preview-text align-top">
-                        {segment.text}
-                      </TableCell>
+              <ScrollArea
+                className="task-partial-scroll"
+                viewportClassName="scroll-fade"
+                viewportRef={liveTranscriptViewportRef}
+              >
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead><Trans>文字</Trans></TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {partialSegments.map((segment, index) => (
+                      <TableRow key={`${segment.startMs}-${index}`}>
+                        <TableCell className="srt-preview-text align-top">
+                          {segment.text}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
             </ScrollArea>
           ) : (
             <div className="task-partial-empty text-sm text-muted-foreground">
