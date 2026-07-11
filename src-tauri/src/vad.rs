@@ -40,7 +40,7 @@ const EXTEND_SPEECH_FRAMES: usize = 0;
 
 const BOUNDARY_PAD_MS: u64 = 240;
 const SPLIT_AFTER_SILENCE_MS: u64 = 5_000;
-const MAX_CHUNK_MS: u64 = 30_000;
+const MAX_CHUNK_MS: u64 = 180_000;
 const MIN_CHUNK_MS: u64 = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
