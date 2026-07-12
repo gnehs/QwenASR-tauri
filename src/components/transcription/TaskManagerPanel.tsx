@@ -619,9 +619,27 @@ export function TaskManagerPanel({
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="task-output-dir">
-                  <Trans>輸出資料夾</Trans>
-                </FieldLabel>
+                <div className="flex items-center justify-between gap-3">
+                  <FieldLabel htmlFor="task-output-dir">
+                    <Trans>輸出資料夾</Trans>
+                  </FieldLabel>
+                  {taskDraft.outputDir ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      onClick={() =>
+                        onTaskDraftChange((current) => ({
+                          ...current,
+                          outputDir: "",
+                        }))
+                      }
+                    >
+                      <RotateCcwIcon data-icon="inline-start" />
+                      <Trans>重置</Trans>
+                    </Button>
+                  ) : null}
+                </div>
                 <div className="flex gap-2">
                   <Input
                     id="task-output-dir"

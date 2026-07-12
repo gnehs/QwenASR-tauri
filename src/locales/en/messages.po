@@ -52,7 +52,7 @@ msgid "{0} 更多操作"
 msgstr "{0} More actions"
 
 #. placeholder {0}: partialSegments.length
-#: src/components/transcription/TaskManagerPanel.tsx:1019
+#: src/components/transcription/TaskManagerPanel.tsx:1036
 msgid "{0} 段"
 msgstr "{0} segments"
 
@@ -123,7 +123,7 @@ msgid "SRT 字幕"
 msgstr "SRT subtitles"
 
 #. placeholder {0}: result.srtPath
-#: src/components/transcription/TaskManagerPanel.tsx:1144
+#: src/components/transcription/TaskManagerPanel.tsx:1161
 msgid "SRT: {0}"
 msgstr "SRT: {0}"
 
@@ -136,7 +136,7 @@ msgid "VAD"
 msgstr "VAD"
 
 #: src/components/transcription/ModelPanel.tsx:235
-#: src/components/transcription/TaskManagerPanel.tsx:907
+#: src/components/transcription/TaskManagerPanel.tsx:924
 msgid "下載中"
 msgstr "Downloading"
 
@@ -146,11 +146,11 @@ msgid "下載大小{0}"
 msgstr "Download size {0}"
 
 #: src/components/transcription/ModelPanel.tsx:247
-#: src/components/transcription/TaskManagerPanel.tsx:844
+#: src/components/transcription/TaskManagerPanel.tsx:861
 msgid "下載模型"
 msgstr "Download model"
 
-#: src/components/transcription/TaskManagerPanel.tsx:873
+#: src/components/transcription/TaskManagerPanel.tsx:890
 msgid "下載速度 {taskModelDownloadSpeed}"
 msgstr "Download speed {taskModelDownloadSpeed}"
 
@@ -166,20 +166,20 @@ msgstr "Danish"
 msgid "主要語言"
 msgstr "Main languages"
 
-#: src/components/transcription/SettingsPanel.tsx:133
-#: src/components/transcription/SettingsPanel.tsx:147
+#: src/components/transcription/SettingsPanel.tsx:139
+#: src/components/transcription/SettingsPanel.tsx:153
 msgid "主題配色"
 msgstr "Theme"
 
-#: src/components/transcription/SettingsPanel.tsx:74
+#: src/components/transcription/SettingsPanel.tsx:80
 msgid "亮色"
 msgstr "Light"
 
-#: src/components/transcription/SettingsPanel.tsx:97
+#: src/components/transcription/SettingsPanel.tsx:103
 msgid "介面"
 msgstr "Interface"
 
-#: src/components/transcription/SettingsPanel.tsx:113
+#: src/components/transcription/SettingsPanel.tsx:119
 msgid "介面語言"
 msgstr "Interface language"
 
@@ -196,7 +196,7 @@ msgid "估算中"
 msgstr "Estimating"
 
 #: src/components/transcription/ResultsPanel.tsx:126
-#: src/components/transcription/TaskManagerPanel.tsx:1078
+#: src/components/transcription/TaskManagerPanel.tsx:1095
 msgid "估算時間"
 msgstr "Estimated timing"
 
@@ -204,7 +204,7 @@ msgstr "Estimated timing"
 msgid "來源資料夾"
 msgstr "Source folder"
 
-#: src/components/transcription/TaskManagerPanel.tsx:647
+#: src/components/transcription/TaskManagerPanel.tsx:664
 msgid "例如：AI、LLM、台灣"
 msgstr "For example: AI, LLM, Taiwan"
 
@@ -213,7 +213,7 @@ msgid "依標點斷句"
 msgstr "Split by punctuation"
 
 #: src/components/transcription/OptionsPanel.tsx:209
-#: src/components/transcription/TaskManagerPanel.tsx:763
+#: src/components/transcription/TaskManagerPanel.tsx:780
 msgid "依標點符號斷句"
 msgstr "Segment by punctuation"
 
@@ -226,7 +226,7 @@ msgid "俄文 / Russian"
 msgstr "Russian"
 
 #: src/components/transcription/ResultsPanel.tsx:105
-#: src/components/transcription/TaskManagerPanel.tsx:1072
+#: src/components/transcription/TaskManagerPanel.tsx:1089
 msgid "偵測語言"
 msgstr "Detected language"
 
@@ -259,17 +259,17 @@ msgstr "Hindi"
 msgid "印尼文 / Indonesian"
 msgstr "Indonesian"
 
-#: src/components/transcription/TaskManagerPanel.tsx:1015
+#: src/components/transcription/TaskManagerPanel.tsx:1032
 msgid "即時逐字稿"
 msgstr "Live transcript"
 
 #: src/components/transcription/ModelPanel.tsx:288
-#: src/components/transcription/TaskManagerPanel.tsx:812
+#: src/components/transcription/TaskManagerPanel.tsx:829
 msgid "取消"
 msgstr "Cancel"
 
 #: src/components/transcription/OptionsPanel.tsx:140
-#: src/components/transcription/TaskManagerPanel.tsx:672
+#: src/components/transcription/TaskManagerPanel.tsx:689
 msgid "可同時輸出多種格式至指定資料夾。"
 msgstr "Export multiple formats to the selected folder."
 
@@ -285,7 +285,7 @@ msgstr "Wu Chinese"
 msgid "四川方言 / Sichuan"
 msgstr "Sichuan dialect"
 
-#: src/components/transcription/TaskManagerPanel.tsx:888
+#: src/components/transcription/TaskManagerPanel.tsx:905
 msgid "回到任務設定"
 msgstr "Back to task settings"
 
@@ -317,8 +317,8 @@ msgstr "Tianjin dialect"
 msgid "失敗"
 msgstr "Failed"
 
-#: src/components/transcription/TaskManagerPanel.tsx:705
-#: src/components/transcription/TaskManagerPanel.tsx:1122
+#: src/components/transcription/TaskManagerPanel.tsx:722
+#: src/components/transcription/TaskManagerPanel.tsx:1139
 msgid "字幕"
 msgstr "Subtitles"
 
@@ -417,7 +417,7 @@ msgstr "Greek"
 msgid "建立可隨音訊同步顯示的字幕檔。"
 msgstr "Create subtitles synchronized with the audio."
 
-#: src/components/transcription/TaskManagerPanel.tsx:708
+#: src/components/transcription/TaskManagerPanel.tsx:725
 msgid "建立字幕檔，首次使用時需下載約 1.8 GB 的對齊模型。"
 msgstr "Create a subtitle file. The first use downloads an alignment model of about 1.8 GB."
 
@@ -462,7 +462,7 @@ msgid "拖放檔案到這裡來建立任務"
 msgstr "Drop files here to create a task"
 
 #: src/components/transcription/ResultsPanel.tsx:112
-#: src/components/transcription/TaskManagerPanel.tsx:1067
+#: src/components/transcription/TaskManagerPanel.tsx:1084
 msgid "指定語言"
 msgstr "Specified language"
 
@@ -494,33 +494,33 @@ msgstr "Release to create a transcription task"
 msgid "整理"
 msgstr "Finalize"
 
-#: src/components/transcription/TaskManagerPanel.tsx:1196
-#: src/components/transcription/TaskManagerPanel.tsx:1202
+#: src/components/transcription/TaskManagerPanel.tsx:1213
+#: src/components/transcription/TaskManagerPanel.tsx:1219
 msgid "數值"
 msgstr "Value"
 
 #: src/components/transcription/ResultsPanel.tsx:164
-#: src/components/transcription/TaskManagerPanel.tsx:679
-#: src/components/transcription/TaskManagerPanel.tsx:1032
-#: src/components/transcription/TaskManagerPanel.tsx:1156
+#: src/components/transcription/TaskManagerPanel.tsx:696
+#: src/components/transcription/TaskManagerPanel.tsx:1049
+#: src/components/transcription/TaskManagerPanel.tsx:1173
 msgid "文字"
 msgstr "Text"
 
-#: src/components/transcription/TaskManagerPanel.tsx:821
+#: src/components/transcription/TaskManagerPanel.tsx:838
 msgid "新增中"
 msgstr "Adding"
 
 #: src/App.tsx:76
-#: src/components/transcription/TaskManagerPanel.tsx:823
+#: src/components/transcription/TaskManagerPanel.tsx:840
 msgid "新增任務"
 msgstr "Add task"
 
 #. placeholder {0}: draftModel.title
-#: src/components/transcription/TaskManagerPanel.tsx:848
+#: src/components/transcription/TaskManagerPanel.tsx:865
 msgid "新增任務需要先下載 {0}；完成後會自動加入佇列。"
 msgstr "Adding a task requires downloading {0} first; it will be queued automatically when finished."
 
-#: src/components/transcription/TaskManagerPanel.tsx:852
+#: src/components/transcription/TaskManagerPanel.tsx:869
 msgid "新增任務需要先下載模型；完成後會自動加入佇列。"
 msgstr "Adding a task requires downloading a model first; it will be queued automatically when finished."
 
@@ -541,12 +541,12 @@ msgid "日文 / Japanese"
 msgstr "Japanese"
 
 #: src/components/transcription/ResultsPanel.tsx:161
-#: src/components/transcription/TaskManagerPanel.tsx:1153
+#: src/components/transcription/TaskManagerPanel.tsx:1170
 msgid "時間"
 msgstr "Time"
 
 #: src/components/transcription/ResultsPanel.tsx:120
-#: src/components/transcription/TaskManagerPanel.tsx:1099
+#: src/components/transcription/TaskManagerPanel.tsx:1116
 msgid "時間對齊"
 msgstr "Timing alignment"
 
@@ -554,7 +554,7 @@ msgstr "Timing alignment"
 #~ msgid "時間為 VAD 推估，內容會隨轉錄進度更新。"
 #~ msgstr "Time is estimated by VAD; the content updates as transcription progresses."
 
-#: src/components/transcription/SettingsPanel.tsx:75
+#: src/components/transcription/SettingsPanel.tsx:81
 msgid "暗色"
 msgstr "Dark"
 
@@ -563,16 +563,16 @@ msgid "未偵測到 ffmpeg"
 msgstr "FFmpeg not detected"
 
 #: src/components/transcription/ResultsPanel.tsx:107
-#: src/components/transcription/TaskManagerPanel.tsx:1064
+#: src/components/transcription/TaskManagerPanel.tsx:1081
 msgid "未提供"
 msgstr "Unavailable"
 
 #: src/components/transcription/ResultsPanel.tsx:116
-#: src/components/transcription/TaskManagerPanel.tsx:1070
+#: src/components/transcription/TaskManagerPanel.tsx:1087
 msgid "未知來源"
 msgstr "Unknown source"
 
-#: src/components/transcription/TaskManagerPanel.tsx:960
+#: src/components/transcription/TaskManagerPanel.tsx:977
 #: src/lib/format.ts:76
 msgid "未知錯誤"
 msgstr "Unknown error"
@@ -581,7 +581,7 @@ msgstr "Unknown error"
 msgid "未輸出"
 msgstr "Not exported"
 
-#: src/components/transcription/TaskManagerPanel.tsx:1146
+#: src/components/transcription/TaskManagerPanel.tsx:1163
 msgid "未輸出 SRT"
 msgstr "SRT not exported"
 
@@ -597,16 +597,16 @@ msgstr "Dongbei dialect"
 msgid "模型"
 msgstr "Model"
 
-#: src/components/transcription/TaskManagerPanel.tsx:861
+#: src/components/transcription/TaskManagerPanel.tsx:878
 msgid "模型下載失敗"
 msgstr "Model download failed"
 
-#: src/components/transcription/TaskManagerPanel.tsx:868
+#: src/components/transcription/TaskManagerPanel.tsx:885
 msgid "模型下載整體進度"
 msgstr "Overall model download progress"
 
 #: src/components/transcription/ResultsPanel.tsx:114
-#: src/components/transcription/TaskManagerPanel.tsx:1069
+#: src/components/transcription/TaskManagerPanel.tsx:1086
 msgid "模型偵測"
 msgstr "Model detected"
 
@@ -634,7 +634,7 @@ msgstr "Downloading model files"
 msgid "正在估算語音量"
 msgstr "Estimating speech amount"
 
-#: src/components/transcription/TaskManagerPanel.tsx:974
+#: src/components/transcription/TaskManagerPanel.tsx:991
 msgid "此任務已停止，未產生新的轉錄結果。"
 msgstr "This task was stopped without producing a new transcription result."
 
@@ -741,7 +741,7 @@ msgstr "Remove model"
 msgid "等待中"
 msgstr "Waiting"
 
-#: src/components/transcription/TaskManagerPanel.tsx:988
+#: src/components/transcription/TaskManagerPanel.tsx:1005
 msgid "等待處理"
 msgstr "Waiting to process"
 
@@ -770,7 +770,7 @@ msgid "粵語（香港口音） / Cantonese (Hong Kong accent)"
 msgstr "Cantonese (Hong Kong accent)"
 
 #: src/components/transcription/ResultsPanel.tsx:122
-#: src/components/transcription/TaskManagerPanel.tsx:1075
+#: src/components/transcription/TaskManagerPanel.tsx:1092
 msgid "精準對齊"
 msgstr "Forced alignment"
 
@@ -788,7 +788,7 @@ msgstr "Cancel {0}"
 msgid "終止中 {0}"
 msgstr "Cancelling {0}"
 
-#: src/components/transcription/TaskManagerPanel.tsx:1125
+#: src/components/transcription/TaskManagerPanel.tsx:1142
 msgid "統計"
 msgstr "Statistics"
 
@@ -805,7 +805,7 @@ msgstr "Total time"
 #~ msgid "總處理 {0}"
 #~ msgstr "Total processing {0}"
 
-#: src/components/transcription/TaskManagerPanel.tsx:1183
+#: src/components/transcription/TaskManagerPanel.tsx:1200
 msgid "總處理時間"
 msgstr "Total processing time"
 
@@ -829,7 +829,7 @@ msgstr "Romanian"
 msgid "義大利文 / Italian"
 msgstr "Italian"
 
-#: src/components/transcription/TaskManagerPanel.tsx:766
+#: src/components/transcription/TaskManagerPanel.tsx:783
 msgid "自動依句號、逗號等標點符號斷句，適用於 SRT 字幕產生等情況。"
 msgstr "Automatically split by punctuation such as periods and commas; useful for generating SRT subtitles and similar cases."
 
@@ -881,7 +881,7 @@ msgstr "Decode"
 msgid "設定"
 msgstr "Settings"
 
-#: src/components/transcription/SettingsPanel.tsx:103
+#: src/components/transcription/SettingsPanel.tsx:109
 msgid "語言"
 msgstr "Language"
 
@@ -901,8 +901,8 @@ msgstr "Install in terminal:"
 msgid "請重新整理模型與工具狀態；在 Tauri app 內會從後端讀取支援模型。"
 msgstr "Refresh the model and tool status; the Tauri app reads supported models from the backend."
 
-#: src/components/transcription/SettingsPanel.tsx:128
-#: src/components/transcription/SettingsPanel.tsx:164
+#: src/components/transcription/SettingsPanel.tsx:134
+#: src/components/transcription/SettingsPanel.tsx:170
 msgid "變更後會立即套用並自動保存。"
 msgstr "Changes apply immediately and are saved automatically."
 
@@ -910,7 +910,7 @@ msgstr "Changes apply immediately and are saved automatically."
 msgid "貴州方言 / Guizhou"
 msgstr "Guizhou dialect"
 
-#: src/components/transcription/TaskManagerPanel.tsx:733
+#: src/components/transcription/TaskManagerPanel.tsx:750
 msgid "資料"
 msgstr "Data"
 
@@ -918,7 +918,7 @@ msgstr "Data"
 msgid "越南文 / Vietnamese"
 msgstr "Vietnamese"
 
-#: src/components/transcription/SettingsPanel.tsx:73
+#: src/components/transcription/SettingsPanel.tsx:79
 msgid "跟隨系統"
 msgstr "Follow system"
 
@@ -926,11 +926,11 @@ msgstr "Follow system"
 msgid "較高準確度，適合重要錄音或較複雜的聲學環境。"
 msgstr "Higher accuracy for important recordings or more complex acoustic environments."
 
-#: src/components/transcription/SettingsPanel.tsx:149
+#: src/components/transcription/SettingsPanel.tsx:155
 msgid "載入中…"
 msgstr "Loading…"
 
-#: src/components/transcription/TaskManagerPanel.tsx:659
+#: src/components/transcription/TaskManagerPanel.tsx:676
 msgid "輸入容易辨識錯誤的人名、專有名詞或對話背景，幫助模型選擇正確用字。"
 msgstr "Enter names, specialized terms, or conversation context that are often misrecognized to help the model choose the correct wording."
 
@@ -951,21 +951,21 @@ msgstr "Output"
 #~ msgstr "Output data with segments and word-level timestamps."
 
 #: src/components/transcription/OptionsPanel.tsx:190
-#: src/components/transcription/TaskManagerPanel.tsx:736
+#: src/components/transcription/TaskManagerPanel.tsx:753
 msgid "輸出含分段資料，支援語言會附逐字時間戳。"
 msgstr "Output segmented data; supported languages include word-level timestamps."
 
 #: src/components/transcription/OptionsPanel.tsx:137
-#: src/components/transcription/TaskManagerPanel.tsx:669
+#: src/components/transcription/TaskManagerPanel.tsx:686
 msgid "輸出格式"
 msgstr "Output formats"
 
-#: src/components/transcription/TaskManagerPanel.tsx:1108
+#: src/components/transcription/TaskManagerPanel.tsx:1125
 msgid "輸出檔案"
 msgstr "Output files"
 
 #: src/components/transcription/OptionsPanel.tsx:150
-#: src/components/transcription/TaskManagerPanel.tsx:682
+#: src/components/transcription/TaskManagerPanel.tsx:699
 msgid "輸出純文字逐字稿。"
 msgstr "Export a plain-text transcript."
 
@@ -978,7 +978,7 @@ msgstr "Output results"
 msgid "輸出語言"
 msgstr "Output language"
 
-#: src/components/transcription/TaskManagerPanel.tsx:623
+#: src/components/transcription/TaskManagerPanel.tsx:624
 msgid "輸出資料夾"
 msgstr "Output folder"
 
@@ -995,7 +995,7 @@ msgstr "Transcribing"
 msgid "轉錄任務"
 msgstr "Transcription tasks"
 
-#: src/components/transcription/TaskManagerPanel.tsx:957
+#: src/components/transcription/TaskManagerPanel.tsx:974
 msgid "轉錄失敗"
 msgstr "Transcription failed"
 
@@ -1003,7 +1003,7 @@ msgstr "Transcription failed"
 msgid "轉錄完成"
 msgstr "Transcription complete"
 
-#: src/components/transcription/TaskManagerPanel.tsx:971
+#: src/components/transcription/TaskManagerPanel.tsx:988
 msgid "轉錄已終止"
 msgstr "Transcription cancelled"
 
@@ -1020,7 +1020,7 @@ msgstr "Transcription settings"
 #: src/components/transcription/ResultsPanel.tsx:103
 #: src/components/transcription/TaskManagerPanel.tsx:588
 #: src/components/transcription/TaskManagerPanel.tsx:603
-#: src/components/transcription/TaskManagerPanel.tsx:1072
+#: src/components/transcription/TaskManagerPanel.tsx:1089
 msgid "轉錄語言"
 msgstr "Transcription language"
 
@@ -1033,15 +1033,15 @@ msgstr "Transcription progress {0}%"
 msgid "轉錄進度摘要"
 msgstr "Transcription progress summary"
 
-#: src/components/transcription/TaskManagerPanel.tsx:1049
+#: src/components/transcription/TaskManagerPanel.tsx:1066
 msgid "辨識到語音後，逐字稿會顯示在這裡。"
 msgstr "The transcript appears here after speech is detected."
 
-#: src/components/transcription/TaskManagerPanel.tsx:641
+#: src/components/transcription/TaskManagerPanel.tsx:658
 msgid "辨識提示詞"
 msgstr "Recognition prompt"
 
-#: src/components/transcription/TaskManagerPanel.tsx:1119
+#: src/components/transcription/TaskManagerPanel.tsx:1136
 msgid "逐字稿"
 msgstr "Transcript"
 
@@ -1061,7 +1061,7 @@ msgstr "Speed: Slower · Quality: High"
 msgid "進度"
 msgstr "Progress"
 
-#: src/components/transcription/TaskManagerPanel.tsx:634
+#: src/components/transcription/TaskManagerPanel.tsx:651
 msgid "選取"
 msgstr "Select"
 
@@ -1069,7 +1069,7 @@ msgstr "Select"
 #~ msgid "選擇 QwenASR Studio 使用的介面語言。"
 #~ msgstr "Choose the interface language for QwenASR Studio."
 
-#: src/components/transcription/SettingsPanel.tsx:98
+#: src/components/transcription/SettingsPanel.tsx:104
 msgid "選擇介面語言與主題配色。"
 msgstr "Choose the interface language and theme."
 
@@ -1082,7 +1082,7 @@ msgid "選擇轉錄模型"
 msgstr "Choose a transcription model"
 
 #: src/components/transcription/ResultsPanel.tsx:124
-#: src/components/transcription/TaskManagerPanel.tsx:1077
+#: src/components/transcription/TaskManagerPanel.tsx:1094
 msgid "部分對齊"
 msgstr "Partial alignment"
 
@@ -1090,13 +1090,17 @@ msgstr "Partial alignment"
 msgid "重新下載"
 msgstr "Redownload"
 
-#: src/components/transcription/TaskManagerPanel.tsx:905
+#: src/components/transcription/TaskManagerPanel.tsx:922
 msgid "重新下載並加入佇列"
 msgstr "Download again and add to queue"
 
 #: src/components/transcription/ModelPanel.tsx:129
 msgid "重新整理"
 msgstr "Refresh"
+
+#: src/components/transcription/TaskManagerPanel.tsx:639
+msgid "重置"
+msgstr "Reset"
 
 #. placeholder {0}: basename(task.audioPath)
 #: src/components/transcription/TaskManagerPanel.tsx:407
@@ -1135,8 +1139,8 @@ msgstr "Korean"
 msgid "音訊準備"
 msgstr "Audio preparation"
 
-#: src/components/transcription/TaskManagerPanel.tsx:1193
-#: src/components/transcription/TaskManagerPanel.tsx:1199
+#: src/components/transcription/TaskManagerPanel.tsx:1210
+#: src/components/transcription/TaskManagerPanel.tsx:1216
 msgid "項目"
 msgstr "Item"
 
@@ -1144,7 +1148,7 @@ msgstr "Item"
 msgid "預填"
 msgstr "Prefill"
 
-#: src/components/transcription/TaskManagerPanel.tsx:630
+#: src/components/transcription/TaskManagerPanel.tsx:647
 msgid "預設使用來源檔案所在資料夾"
 msgstr "Default to the source file folder"
 
