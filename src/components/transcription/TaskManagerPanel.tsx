@@ -455,11 +455,8 @@ export function TaskManagerPanel({
                 <Empty className="h-full min-h-[360px] justify-between gap-6 px-6 pb-6">
                   <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4">
                     <EmptyHeader>
-                      <EmptyMedia
-                        variant="icon"
-                        className="size-14 rounded-xl [&_svg]:size-7"
-                      >
-                        <ArchiveIcon />
+                      <EmptyMedia variant="icon" className="size-14 rounded-xl">
+                        <ArchiveIcon className="size-8" />
                       </EmptyMedia>
                       <EmptyTitle className="text-2xl leading-tight font-semibold">
                         <Trans>尚無任務</Trans>
