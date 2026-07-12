@@ -93,7 +93,7 @@ function App() {
                       <Trans>設定</Trans>
                     </SheetTitle>
                     <SheetDescription>
-                      <Trans>管理模型與相關工具。</Trans>
+                      <Trans>管理介面、模型與相關工具。</Trans>
                     </SheetDescription>
                   </SheetHeader>
                   <div className="min-h-0 flex-1 scroll-fade overflow-y-auto p-2 pb-6 sm:px-4">

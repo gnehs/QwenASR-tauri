@@ -110,7 +110,7 @@
       format("woff2");
 }
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where(.dark, .dark *));
 
 html[data-locale="zh-Hans"] {
   --font-sans: "IBM Plex Sans SC", sans-serif;

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { i18n } from "@lingui/core";
 import { Trans, useLingui } from "@lingui/react/macro";
+import { useTheme } from "next-themes";
 
 import {
   Field,
@@ -25,6 +26,19 @@ import type {
   FfmpegStatus,
   ModelStatus,
 } from "@/types/transcription";
+
+const themePreferences = ["system", "light", "dark"] as const;
+type ThemePreference = (typeof themePreferences)[number];
+
+function isThemePreference(
+  value: string | null | undefined,
+): value is ThemePreference {
+  return (
+    value !== null &&
+    value !== undefined &&
+    themePreferences.includes(value as ThemePreference)
+  );
+}
 
 export function SettingsPanel({
   models,
@@ -55,9 +69,21 @@ export function SettingsPanel({
 }) {
   const { t } = useLingui();
   const [isChangingLocale, setIsChangingLocale] = useState(false);
+  const [isThemeMounted, setIsThemeMounted] = useState(false);
+  const { setTheme, theme } = useTheme();
   const activeLocale = (
     i18n.locale in locales ? i18n.locale : "zh-Hant"
   ) as Locale;
+  const activeTheme = isThemePreference(theme) ? theme : "system";
+  const themeLabels: Record<ThemePreference, string> = {
+    system: t`跟隨系統`,
+    light: t`亮色`,
+    dark: t`暗色`,
+  };
+
+  useEffect(() => {
+    setIsThemeMounted(true);
+  }, []);
 
   async function handleLocaleChange(value: string | null) {
     if (!value || value === activeLocale) return;
@@ -73,9 +99,9 @@ export function SettingsPanel({
   return (
     <div className="flex min-h-0 flex-col gap-6">
       <SettingsSection
-        id="language-panel-title"
-        title={<Trans>介面語言</Trans>}
-        description={<Trans>選擇 QwenASR Studio 使用的介面語言。</Trans>}
+        id="interface-panel-title"
+        title={<Trans>介面</Trans>}
+        description={<Trans>選擇介面語言與主題配色。</Trans>}
       >
         <FieldGroup>
           <Field>
@@ -99,6 +125,42 @@ export function SettingsPanel({
                   {Object.entries(locales).map(([value, label]) => (
                     <SelectItem key={value} value={value}>
                       {label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              <Trans>變更後會立即套用並自動保存。</Trans>
+            </FieldDescription>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="interface-theme">
+              <Trans>主題配色</Trans>
+            </FieldLabel>
+            <Select
+              value={isThemeMounted ? activeTheme : null}
+              disabled={!isThemeMounted}
+              onValueChange={(value) => {
+                if (isThemePreference(value)) {
+                  setTheme(value);
+                }
+              }}
+            >
+              <SelectTrigger
+                id="interface-theme"
+                className="w-full"
+                aria-label={t`主題配色`}
+              >
+                <SelectValue placeholder={t`載入中…`}>
+                  {isThemeMounted ? themeLabels[activeTheme] : undefined}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {themePreferences.map((value) => (
+                    <SelectItem key={value} value={value}>
+                      {themeLabels[value]}
                     </SelectItem>
                   ))}
                 </SelectGroup>
