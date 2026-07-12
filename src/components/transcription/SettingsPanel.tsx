@@ -3,12 +3,7 @@ import { i18n } from "@lingui/core";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useTheme } from "next-themes";
 
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -130,9 +125,6 @@ export function SettingsPanel({
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <FieldDescription>
-              <Trans>變更後會立即套用並自動保存。</Trans>
-            </FieldDescription>
           </Field>
           <Field>
             <FieldLabel htmlFor="interface-theme">
@@ -166,9 +158,6 @@ export function SettingsPanel({
                 </SelectGroup>
               </SelectContent>
             </Select>
-            <FieldDescription>
-              <Trans>變更後會立即套用並自動保存。</Trans>
-            </FieldDescription>
           </Field>
         </FieldGroup>
       </SettingsSection>
