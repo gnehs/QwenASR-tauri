@@ -14,7 +14,7 @@ export function SettingsSection({
   return (
     <section className="flex min-w-0 flex-col gap-4" aria-labelledby={id}>
       <div className="flex min-w-0 flex-col gap-1">
-        <h2 id={id} className="font-sans text-lg leading-[1.35] font-semibold">
+        <h2 id={id} className="font-sans text-lg font-medium">
           {title}
         </h2>
         <p className="text-sm/relaxed text-muted-foreground">{description}</p>

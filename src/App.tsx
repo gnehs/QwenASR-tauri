@@ -89,14 +89,14 @@ function App() {
                   className="data-[side=right]:w-[min(560px,100vw)] data-[side=right]:sm:max-w-[min(560px,100vw)]"
                 >
                   <SheetHeader>
-                    <SheetTitle>
+                    <SheetTitle className="text-lg">
                       <Trans>設定</Trans>
                     </SheetTitle>
                     <SheetDescription>
                       <Trans>管理模型與相關工具。</Trans>
                     </SheetDescription>
                   </SheetHeader>
-                  <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-6 sm:px-4">
+                  <div className="min-h-0 flex-1 scroll-fade overflow-y-auto p-2 pb-6 sm:px-4">
                     <SettingsPanel
                       models={workspace.models}
                       downloadProgress={workspace.downloadProgress}

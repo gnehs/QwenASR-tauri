@@ -97,7 +97,7 @@ export function OptionsPanel({
             </Trans>
           </SheetDescription>
         </SheetHeader>
-        <div className="min-h-0 overflow-auto px-4 pb-4">
+        <div className="min-h-0 scroll-fade overflow-auto px-4 pb-4">
           <FieldGroup>
             <Field>
               <FieldLabel>

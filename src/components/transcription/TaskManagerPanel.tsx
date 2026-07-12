@@ -537,7 +537,7 @@ export function TaskManagerPanel({
       </Sheet>
 
       <Dialog open={isTaskDialogOpen} onOpenChange={onTaskDialogOpenChange}>
-        <DialogContent className="w-[min(680px,calc(100vw-2rem))] max-w-[min(680px,calc(100vw-2rem))]">
+        <DialogContent className="w-[min(920px,calc(100vw-2rem))] max-w-[min(920px,calc(100vw-2rem))] sm:max-w-[min(920px,calc(100vw-2rem))]">
           <DialogHeader>
             <DialogTitle>
               <Trans>新增轉錄任務</Trans>
@@ -550,8 +550,8 @@ export function TaskManagerPanel({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex max-h-[min(620px,calc(100vh-220px))] min-h-0 flex-col gap-4 overflow-x-hidden overflow-y-auto p-1">
-            <FieldGroup>
+          <div className="grid max-h-[min(620px,calc(100vh-220px))] min-h-0 grid-cols-1 gap-x-6 gap-y-5 overflow-x-hidden overflow-y-auto p-1 md:grid-cols-2">
+            <FieldGroup className="min-w-0">
               <Field>
                 <FieldLabel>
                   <Trans>轉錄模型</Trans>
@@ -635,7 +635,9 @@ export function TaskManagerPanel({
                   </Button>
                 </div>
               </Field>
+            </FieldGroup>
 
+            <FieldGroup className="min-w-0">
               <Field>
                 <FieldLabel htmlFor="task-context">
                   <Trans>辨識提示詞</Trans>
@@ -784,10 +786,10 @@ export function TaskManagerPanel({
               </Field>
             </FieldGroup>
 
-            <Separator />
+            <Separator className="md:col-span-2" />
 
             <ScrollArea
-              className="h-40 max-w-full min-w-0 rounded-lg border"
+              className="h-40 max-w-full min-w-0 rounded-lg border md:col-span-2"
               viewportClassName="overflow-x-hidden"
             >
               {taskDraft.files.map((file) => (
