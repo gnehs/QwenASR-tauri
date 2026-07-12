@@ -52,6 +52,10 @@ const ALIGN_PHASE_START: f64 = TRANSCRIBE_PHASE_END_WITH_ALIGNMENT;
 const ALIGN_PHASE_END: f64 = 1.0;
 const ASR_CHUNK_OVERHEAD_MS: u64 = 500;
 const STREAM_UPDATE_INTERVAL_MS: u128 = 75;
+// The decoder cannot know its final token count before EOS. Advance smoothly
+// toward, but never reach, the chunk boundary until decoding actually finishes.
+const STREAM_PROGRESS_TOKEN_SCALE: f64 = 16.0;
+const STREAM_PROGRESS_MAX_RATIO: f64 = 0.9;
 #[cfg(target_os = "macos")]
 const MLX_CACHE_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
 static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
@@ -741,6 +745,12 @@ fn progress_between(start: f64, end: f64, ratio: f64) -> f64 {
     start + (end - start).max(0.0) * ratio.clamp(0.0, 1.0)
 }
 
+fn estimated_stream_progress_ratio(generated_tokens: usize) -> f64 {
+    let generated_tokens = generated_tokens as f64;
+    STREAM_PROGRESS_MAX_RATIO
+        * (generated_tokens / (generated_tokens + STREAM_PROGRESS_TOKEN_SCALE))
+}
+
 fn estimate_remaining_ms(started: Instant, processed_ms: u64, total_ms: u64) -> Option<u128> {
     let elapsed_ms = started.elapsed().as_millis();
     if elapsed_ms < 800 {
@@ -1077,6 +1087,13 @@ fn transcribe_with_context(
         );
         let before_eta_ms =
             estimate_remaining_ms(asr_started, processed_asr_work_ms, total_asr_work_ms);
+        let after_ratio = processed_asr_work_ms.saturating_add(chunk_work_ms(*chunk)) as f64
+            / total_asr_work_ms as f64;
+        let after_percent = progress_between(
+            progress_between(range_start, range_end, TRANSCRIBE_PHASE_START),
+            range_end,
+            after_ratio,
+        );
         emit_chunk_progress(
             app,
             progress_started,
@@ -1150,6 +1167,11 @@ fn transcribe_with_context(
                             *chunk,
                             options.segment_by_punctuation,
                         );
+                        let stream_percent = progress_between(
+                            before_percent,
+                            after_percent,
+                            estimated_stream_progress_ratio(partial.generated_tokens),
+                        );
                         emit_chunk_progress(
                             app,
                             progress_started,
@@ -1162,7 +1184,7 @@ fn transcribe_with_context(
                             processed_audio_ms,
                             total_chunk_audio_ms,
                             skipped_silence_ms,
-                            before_percent,
+                            stream_percent,
                             before_eta_ms.map(|eta_ms| {
                                 eta_ms.saturating_sub(asr_chunk_started.elapsed().as_millis())
                             }),
@@ -2126,6 +2148,22 @@ mod tests {
             total_chunk_work_ms(&chunks),
             3_000 + ASR_CHUNK_OVERHEAD_MS * 2
         );
+    }
+
+    #[test]
+    fn streaming_progress_advances_monotonically_without_completing_the_chunk() {
+        let token_counts = [0, 1, 4, 16, 64, 512];
+        let ratios = token_counts.map(estimated_stream_progress_ratio);
+
+        assert_eq!(ratios[0], 0.0);
+        assert!(ratios.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(ratios[1] > 0.0);
+        assert!(ratios
+            .iter()
+            .all(|ratio| *ratio <= STREAM_PROGRESS_MAX_RATIO));
+        assert!(ratios.iter().all(|ratio| *ratio < 1.0));
+        assert_roughly_eq(ratios[3], 0.45);
+        assert!(ratios[5] < STREAM_PROGRESS_MAX_RATIO);
     }
 
     #[test]
