@@ -1,4 +1,12 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { MessageDescriptor } from "@lingui/core";
 import { msg } from "@lingui/core/macro";
@@ -211,6 +219,126 @@ function timingRows(
   ] as const;
 }
 
+const TaskTableRow = memo(function TaskTableRow({
+  task,
+  isSelected,
+  etaTick,
+  isCancelling,
+  t,
+  translate,
+  localizedLanguageItems,
+  onSelect,
+  onRetry,
+  onCancel,
+  onRemove,
+}: {
+  task: TranscriptionTask;
+  isSelected: boolean;
+  etaTick: number | null;
+  isCancelling: boolean;
+  t: Translate;
+  translate: RuntimeTranslate;
+  localizedLanguageItems: SelectOption[];
+  onSelect: (taskId: string) => void;
+  onRetry: (taskId: string) => void;
+  onCancel: (taskId: string) => void;
+  onRemove: (taskId: string) => void;
+}) {
+  const meta = statusMeta[task.status];
+  const percent = taskPercent(task);
+
+  return (
+    <TableRow
+      className="cursor-pointer data-[selected=true]:bg-primary/5"
+      data-selected={isSelected}
+      onClick={() => onSelect(task.id)}
+    >
+      <TableCell className="w-[42%] max-w-0 max-[720px]:min-w-[180px]">
+        <div className="min-w-0">
+          <div className="truncate font-medium">{basename(task.audioPath)}</div>
+          <div className="truncate text-xs text-muted-foreground">
+            {task.outputDir || <Trans>來源資料夾</Trans>}
+          </div>
+        </div>
+      </TableCell>
+      <TableCell>
+        <Badge variant={meta.badge}>
+          {statusLabel(task.status, translate)}
+        </Badge>
+      </TableCell>
+      <TableCell className="min-w-[170px]">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <Progress
+            value={percent}
+            aria-label={t`${basename(task.audioPath)} 進度`}
+          />
+          <div className="flex min-w-0 items-center justify-between gap-2.5 text-xs/none text-muted-foreground tabular-nums">
+            <span>{percent.toFixed(0)}%</span>
+            <span>{taskEtaLabel(task, etaTick ?? 0)}</span>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className="max-w-[180px] max-[720px]:min-w-[180px]">
+        <div className="truncate">{task.modelTitle}</div>
+        <div className="truncate text-xs text-muted-foreground">
+          {taskLanguageLabel(task, t, localizedLanguageItems)}
+        </div>
+      </TableCell>
+      <TableCell className="text-right">
+        <div className="flex items-center justify-end gap-2">
+          {task.status === "failed" ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRetry(task.id);
+              }}
+            >
+              <RotateCcwIcon data-icon="inline-start" />
+              <span className="sr-only">{t`重試 ${basename(task.audioPath)}`}</span>
+            </Button>
+          ) : null}
+          {task.status === "running" ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              disabled={isCancelling}
+              onClick={(event) => {
+                event.stopPropagation();
+                onCancel(task.id);
+              }}
+            >
+              {isCancelling ? (
+                <Spinner />
+              ) : (
+                <CircleStopIcon data-icon="inline-start" />
+              )}
+              <span className="sr-only">
+                {isCancelling
+                  ? t`終止中 ${basename(task.audioPath)}`
+                  : t`終止 ${basename(task.audioPath)}`}
+              </span>
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={(event) => {
+                event.stopPropagation();
+                onRemove(task.id);
+              }}
+            >
+              <Trash2Icon data-icon="inline-start" />
+              <span className="sr-only">{t`移除 ${basename(task.audioPath)}`}</span>
+            </Button>
+          )}
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+});
+
 export function TaskManagerPanel({
   tasks,
   transcribedFileCount,
@@ -270,6 +398,24 @@ export function TaskManagerPanel({
   const [isSupportBannerDismissed, setIsSupportBannerDismissed] =
     useState(false);
   const [etaTick, setEtaTick] = useState(() => Date.now());
+  const onCancelTaskRef = useRef(onCancelTask);
+  const onRemoveTaskRef = useRef(onRemoveTask);
+  const onRetryTaskRef = useRef(onRetryTask);
+  onCancelTaskRef.current = onCancelTask;
+  onRemoveTaskRef.current = onRemoveTask;
+  onRetryTaskRef.current = onRetryTask;
+  const selectTask = useCallback((taskId: string) => {
+    setSelectedTaskId(taskId);
+  }, []);
+  const cancelTask = useCallback((taskId: string) => {
+    onCancelTaskRef.current(taskId);
+  }, []);
+  const removeTask = useCallback((taskId: string) => {
+    onRemoveTaskRef.current(taskId);
+  }, []);
+  const retryTask = useCallback((taskId: string) => {
+    onRetryTaskRef.current(taskId);
+  }, []);
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
   const hasRunningTasks = tasks.some((task) => task.status === "running");
   const shouldShowSupportBanner =
@@ -350,112 +496,22 @@ export function TaskManagerPanel({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {tasks.map((task) => {
-                      const meta = statusMeta[task.status];
-                      const percent = taskPercent(task);
-
-                      return (
-                        <TableRow
-                          key={task.id}
-                          className="cursor-pointer data-[selected=true]:bg-primary/5"
-                          data-selected={selectedTask?.id === task.id}
-                          onClick={() => setSelectedTaskId(task.id)}
-                        >
-                          <TableCell className="w-[42%] max-w-0 max-[720px]:min-w-[180px]">
-                            <div className="min-w-0">
-                              <div className="truncate font-medium">
-                                {basename(task.audioPath)}
-                              </div>
-                              <div className="truncate text-xs text-muted-foreground">
-                                {task.outputDir || <Trans>來源資料夾</Trans>}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant={meta.badge}>
-                              {statusLabel(task.status, _)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="min-w-[170px]">
-                            <div className="flex min-w-0 flex-col gap-1.5">
-                              <Progress
-                                value={percent}
-                                aria-label={t`${basename(task.audioPath)} 進度`}
-                              />
-                              <div className="flex min-w-0 items-center justify-between gap-2.5 text-xs/none text-muted-foreground tabular-nums">
-                                <span>{percent.toFixed(0)}%</span>
-                                <span>{taskEtaLabel(task, etaTick)}</span>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="max-w-[180px] max-[720px]:min-w-[180px]">
-                            <div className="truncate">{task.modelTitle}</div>
-                            <div className="truncate text-xs text-muted-foreground">
-                              {taskLanguageLabel(
-                                task,
-                                t,
-                                localizedLanguageItems,
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              {task.status === "failed" ? (
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    onRetryTask(task.id);
-                                  }}
-                                >
-                                  <RotateCcwIcon data-icon="inline-start" />
-                                  <span className="sr-only">
-                                    {t`重試 ${basename(task.audioPath)}`}
-                                  </span>
-                                </Button>
-                              ) : null}
-                              {task.status === "running" ? (
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  disabled={cancellingTaskId === task.id}
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    onCancelTask(task.id);
-                                  }}
-                                >
-                                  {cancellingTaskId === task.id ? (
-                                    <Spinner />
-                                  ) : (
-                                    <CircleStopIcon data-icon="inline-start" />
-                                  )}
-                                  <span className="sr-only">
-                                    {cancellingTaskId === task.id
-                                      ? t`終止中 ${basename(task.audioPath)}`
-                                      : t`終止 ${basename(task.audioPath)}`}
-                                  </span>
-                                </Button>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    onRemoveTask(task.id);
-                                  }}
-                                >
-                                  <Trash2Icon data-icon="inline-start" />
-                                  <span className="sr-only">
-                                    {t`移除 ${basename(task.audioPath)}`}
-                                  </span>
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
+                    {tasks.map((task) => (
+                      <TaskTableRow
+                        key={task.id}
+                        task={task}
+                        isSelected={selectedTask?.id === task.id}
+                        etaTick={task.status === "running" ? etaTick : null}
+                        isCancelling={cancellingTaskId === task.id}
+                        t={t}
+                        translate={_}
+                        localizedLanguageItems={localizedLanguageItems}
+                        onSelect={selectTask}
+                        onRetry={retryTask}
+                        onCancel={cancelTask}
+                        onRemove={removeTask}
+                      />
+                    ))}
                   </TableBody>
                 </Table>
               ) : (
@@ -816,15 +872,17 @@ export function TaskManagerPanel({
               className="h-40 max-w-full min-w-0 rounded-lg border md:col-span-2"
               viewportClassName="overflow-x-hidden"
             >
-              {taskDraft.files.map((file) => (
-                <div
-                  key={file}
-                  className="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden border-b p-2 text-sm last:border-b-0"
-                >
-                  <FileAudioIcon />
-                  <span className="truncate">{basename(file)}</span>
-                </div>
-              ))}
+              {isTaskDialogOpen
+                ? taskDraft.files.map((file) => (
+                    <div
+                      key={file}
+                      className="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden border-b p-2 text-sm last:border-b-0"
+                    >
+                      <FileAudioIcon />
+                      <span className="truncate">{basename(file)}</span>
+                    </div>
+                  ))
+                : null}
             </ScrollArea>
           </div>
 

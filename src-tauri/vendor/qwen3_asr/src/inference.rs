@@ -1,18 +1,16 @@
+use crate::tensor::{Device, Tensor};
 use anyhow::{Context, Result};
 use std::ops::Range;
 use std::path::Path;
 use std::time::Instant;
-use crate::tensor::{Device, Tensor};
 
 use crate::audio;
 use crate::audio_encoder::AudioEncoder;
 use crate::config::AsrConfig;
 use crate::layers::compute_mrope_cos_sin;
 use crate::mel::WhisperFeatureExtractor;
-use crate::text_decoder::{create_causal_mask, KvCache, TextDecoder};
-use crate::tokenizer::{
-    AsrTokenizer, AUDIO_PAD_TOKEN_ID, ENDOFTEXT_TOKEN_ID, IM_END_TOKEN_ID,
-};
+use crate::text_decoder::{KvCache, TextDecoder, PREFILL_BLOCK_SIZE};
+use crate::tokenizer::{AsrTokenizer, AUDIO_PAD_TOKEN_ID, ENDOFTEXT_TOKEN_ID, IM_END_TOKEN_ID};
 use crate::weights;
 
 const MEL_SAMPLE_RATE: u32 = 16000;
@@ -20,6 +18,9 @@ const MEL_SAMPLE_RATE: u32 = 16000;
 // this limit aligned with the precomputed RoPE table also prevents a missing
 // EOS token from reading an empty position slice and terminating MLX.
 const MAX_NEW_TOKENS: usize = 512;
+// Full tokenizer.decode is linear in all generated IDs. Keep callback polling
+// per-token for cancellation, but only rebuild cumulative text periodically.
+const STREAMING_DECODE_INTERVAL_TOKENS: usize = 4;
 
 #[derive(Debug, Clone, Default)]
 pub struct InferenceTimings {
@@ -49,8 +50,8 @@ impl AsrInference {
         tracing::info!("Loading model from {:?}", model_dir);
 
         // Load config
-        let config =
-            AsrConfig::from_file(&model_dir.join("config.json")).context("Failed to load config")?;
+        let config = AsrConfig::from_file(&model_dir.join("config.json"))
+            .context("Failed to load config")?;
 
         // Load weights (supports both single-file and sharded safetensors)
         let all_weights =
@@ -79,13 +80,12 @@ impl AsrInference {
 
         // Load tokenizer
         tracing::info!("Loading tokenizer...");
-        let tokenizer =
-            AsrTokenizer::from_dir(model_dir).context("Failed to load tokenizer")?;
+        let tokenizer = AsrTokenizer::from_dir(model_dir).context("Failed to load tokenizer")?;
 
         // Create mel feature extractor
         let mel_extractor = WhisperFeatureExtractor::new(
-            400,  // n_fft
-            160,  // hop_length
+            400, // n_fft
+            160, // hop_length
             config.thinker_config.audio_config.num_mel_bins,
             MEL_SAMPLE_RATE,
             device,
@@ -146,10 +146,11 @@ impl AsrInference {
 
     /// Transcribe decoded mono audio samples while reporting each generated token.
     ///
-    /// The callback receives a cumulative, parsed transcription snapshot after
-    /// every non-EOS token. Returning [`StreamingControl::Stop`] prevents the
-    /// next decoder step from starting. Callers must inspect [`StreamingStatus`]
-    /// to distinguish a callback stop from a normally completed transcription.
+    /// The callback is polled after every non-EOS token so cancellation remains
+    /// responsive. Text fields are refreshed periodically and otherwise reuse
+    /// the latest parsed snapshot. Returning [`StreamingControl::Stop`] prevents
+    /// the next decoder step from starting. Callers must inspect
+    /// [`StreamingStatus`] to distinguish a callback stop from completion.
     pub fn transcribe_samples_with_context_streaming<F>(
         &self,
         samples: &[f32],
@@ -201,8 +202,7 @@ impl AsrInference {
         let seq_len = input_ids.len();
 
         // Step 5: Build embeddings with audio injection
-        let input_tensor =
-            Tensor::from_slice_i64(&input_ids).to_device(self.device);
+        let input_tensor = Tensor::from_slice_i64(&input_ids).to_device(self.device);
         let token_embeds = self.text_decoder.embed(&input_tensor).unsqueeze(0);
 
         // Audio placeholders are contiguous. Replace the whole range at once so
@@ -223,11 +223,8 @@ impl AsrInference {
         // The decode loop and position table must share the same budget.
         let max_total_positions = seq_len + MAX_NEW_TOKENS;
         let all_positions: Vec<i64> = (0..max_total_positions as i64).collect();
-        let all_pos_ids: [Vec<i64>; 3] = [
-            all_positions.clone(),
-            all_positions.clone(),
-            all_positions,
-        ];
+        let all_pos_ids: [Vec<i64>; 3] =
+            [all_positions.clone(), all_positions.clone(), all_positions];
         let (all_cos, all_sin) = compute_mrope_cos_sin(
             &all_pos_ids,
             text_config.head_dim,
@@ -242,15 +239,14 @@ impl AsrInference {
         let sin = all_sin.narrow(0, 0, seq_len as i64);
 
         // Step 7: Prefill
-        let mask = create_causal_mask(seq_len as i64, 0, self.device);
         let mut kv_cache = KvCache::new(text_config.num_hidden_layers);
 
-        let logits = self.text_decoder.forward_last_token(
+        let logits = self.text_decoder.prefill_last_token(
             &hidden_states,
             &cos,
             &sin,
             &mut kv_cache,
-            Some(&mask),
+            PREFILL_BLOCK_SIZE,
         );
         // Eval prefill output to materialize computation graph before decode loop
         logits.eval();
@@ -261,6 +257,7 @@ impl AsrInference {
         let mut generated_ids: Vec<i64> = Vec::with_capacity(MAX_NEW_TOKENS);
         let eos_token_ids = [ENDOFTEXT_TOKEN_ID, IM_END_TOKEN_ID];
         let mut streaming_status = StreamingStatus::Completed;
+        let mut latest_partial_text: Option<String> = None;
 
         let mut next_logits = logits.squeeze_dim(1);
 
@@ -278,9 +275,14 @@ impl AsrInference {
             generated_ids.push(next_token);
 
             if let Some(on_partial) = on_partial.as_mut() {
-                let raw_text = self.tokenizer.decode(&generated_ids)?;
+                if should_refresh_streaming_text(generated_ids.len()) {
+                    latest_partial_text = Some(self.tokenizer.decode(&generated_ids)?);
+                }
+                let raw_text = latest_partial_text
+                    .as_deref()
+                    .expect("the first generated token always refreshes streaming text");
                 if dispatch_partial(
-                    &raw_text,
+                    raw_text,
                     language.is_some(),
                     next_token,
                     generated_ids.len(),
@@ -299,13 +301,9 @@ impl AsrInference {
             let new_sin = all_sin.narrow(0, current_pos as i64, 1);
 
             // Single-token decode: causal mask is all-zeros (no masking needed)
-            next_logits = self.text_decoder.forward(
-                &next_hidden,
-                &new_cos,
-                &new_sin,
-                &mut kv_cache,
-                None,
-            );
+            next_logits =
+                self.text_decoder
+                    .forward(&next_hidden, &new_cos, &new_sin, &mut kv_cache, None);
             next_logits = next_logits.squeeze_dim(1);
 
             current_pos += 1;
@@ -370,17 +368,16 @@ impl AsrInference {
 
         if let Some(lang) = language {
             tokens.push(77091); // assistant
-            tokens.push(198);   // \n
+            tokens.push(198); // \n
             let prefix = format!("language {}", capitalize_first(lang));
             tokens.extend(self.tokenizer.encode(&prefix)?);
         } else {
             tokens.push(77091); // assistant
-            tokens.push(198);   // \n
+            tokens.push(198); // \n
         }
 
         Ok((tokens, audio_positions))
     }
-
 }
 
 /// Result of ASR transcription.
@@ -440,6 +437,10 @@ where
         latest_token_id,
         generated_tokens,
     })
+}
+
+fn should_refresh_streaming_text(generated_tokens: usize) -> bool {
+    generated_tokens == 1 || generated_tokens % STREAMING_DECODE_INTERVAL_TOKENS == 0
 }
 
 fn parse_asr_output(raw: &str, language_forced: bool) -> (String, String) {
@@ -542,5 +543,14 @@ mod tests {
         assert_eq!(snapshot.language, "forced");
         assert_eq!(snapshot.text, "hello");
         assert_eq!(snapshot.generated_tokens, 1);
+    }
+
+    #[test]
+    fn streaming_text_refresh_is_throttled_but_starts_immediately() {
+        let refreshes: Vec<usize> = (1..=10)
+            .filter(|&tokens| should_refresh_streaming_text(tokens))
+            .collect();
+
+        assert_eq!(refreshes, vec![1, 4, 8]);
     }
 }

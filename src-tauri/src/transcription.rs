@@ -2,10 +2,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc, Mutex, OnceLock,
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc, Arc, Mutex, OnceLock,
 };
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use opencc_rs::{Config, OpenCC};
 use qwen3_asr::{
@@ -56,10 +57,14 @@ const STREAM_UPDATE_INTERVAL_MS: u128 = 75;
 // toward, but never reach, the chunk boundary until decoding actually finishes.
 const STREAM_PROGRESS_TOKEN_SCALE: f64 = 16.0;
 const STREAM_PROGRESS_MAX_RATIO: f64 = 0.9;
+const ASR_ENGINE_IDLE_TTL: Duration = Duration::from_secs(120);
 #[cfg(target_os = "macos")]
 const MLX_CACHE_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
 static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
 static INFERENCE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+static ASR_ENGINE_CACHE: OnceLock<Mutex<Option<CachedAsrEngine>>> = OnceLock::new();
+static ASR_CACHE_REAPER: OnceLock<Option<mpsc::Sender<u64>>> = OnceLock::new();
+static ASR_CACHE_GENERATION: AtomicU64 = AtomicU64::new(0);
 const ASR_LANGUAGES: &[&str] = &[
     "Chinese",
     "English",
@@ -185,6 +190,28 @@ impl TranscriptionControl {
     }
 }
 
+fn inference_lock() -> &'static Mutex<()> {
+    INFERENCE_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+/// Releases an idle ASR engine, waiting for any active inference to finish.
+///
+/// The Tauri command wrapper lives in `lib.rs`; keeping the resource operation
+/// here ensures it follows the same lock order as transcription and TTL expiry.
+pub fn release_cached_engine() -> bool {
+    let _inference_guard = inference_lock()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    ASR_CACHE_GENERATION.fetch_add(1, Ordering::AcqRel);
+    let cached = take_cached_engine();
+    let released = cached.is_some();
+    drop(cached);
+    if released {
+        release_mlx_cache("idle ASR model explicitly released");
+    }
+    released
+}
+
 fn check_cancelled(cancel: &CancellationToken) -> AppResult<()> {
     if cancel.load(Ordering::Acquire) {
         Err(AppError::Cancelled("轉錄已終止".into()))
@@ -198,8 +225,7 @@ pub fn transcribe_file(
     request: TranscribeFileRequest,
     cancel: CancellationToken,
 ) -> AppResult<TranscriptionResult> {
-    let _inference_guard = INFERENCE_LOCK
-        .get_or_init(|| Mutex::new(()))
+    let _inference_guard = inference_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let started = Instant::now();
@@ -285,7 +311,7 @@ fn transcribe_file_inner(
 
     let device = default_device();
     let mut memory_guard = MlxTaskMemoryGuard::new();
-    let engine = load_engine(&model_path, device)?;
+    let engine = load_engine_for_task(&model_path, device)?;
     check_cancelled(cancel)?;
     let asr_range_end = if use_forced_aligner {
         progress_between(
@@ -326,8 +352,16 @@ fn transcribe_file_inner(
         TRANSCRIPTION_WORK_END_PERCENT,
         ALIGN_PHASE_END,
     );
-    drop(engine);
-    release_mlx_cache("ASR model unloaded");
+    if use_forced_aligner {
+        drop(engine);
+        release_mlx_cache("ASR model unloaded");
+    } else {
+        if cache_engine(model_path.clone(), engine) {
+            memory_guard.preserve_cache();
+        } else {
+            memory_guard.clear_now("ASR model cache unavailable");
+        }
+    }
     check_cancelled(cancel)?;
     let aligner = load_aligner_after_transcription(
         app,
@@ -347,7 +381,9 @@ fn transcribe_file_inner(
     let mut result =
         finalize_transcription_with_context(app, started, aligner.as_ref(), pending, cancel)?;
     drop(aligner);
-    memory_guard.clear_now("ForcedAligner unloaded after transcription");
+    if use_forced_aligner {
+        memory_guard.clear_now("ForcedAligner unloaded after transcription");
+    }
     result.duration_ms = started.elapsed().as_millis();
     result.timings.total_ms = result.duration_ms;
     if let Some(json_path) = result.json_path.as_deref() {
@@ -387,8 +423,7 @@ pub fn transcribe_batch(
     app: AppHandle,
     request: TranscribeBatchRequest,
 ) -> AppResult<Vec<TranscriptionResult>> {
-    let _inference_guard = INFERENCE_LOCK
-        .get_or_init(|| Mutex::new(()))
+    let _inference_guard = inference_lock()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let started = Instant::now();
@@ -445,7 +480,7 @@ pub fn transcribe_batch(
 
     let device = default_device();
     let mut memory_guard = MlxTaskMemoryGuard::new();
-    let engine = load_engine(&model_path, device)?;
+    let engine = load_engine_for_task(&model_path, device)?;
     let total = request.audio_paths.len();
     let mut pending_results = Vec::with_capacity(total);
 
@@ -530,8 +565,16 @@ pub fn transcribe_batch(
         pending_results.push(pending);
     }
 
-    drop(engine);
-    release_mlx_cache("ASR model unloaded before batch alignment");
+    if use_forced_aligner {
+        drop(engine);
+        release_mlx_cache("ASR model unloaded before batch alignment");
+    } else {
+        if cache_engine(model_path.clone(), engine) {
+            memory_guard.preserve_cache();
+        } else {
+            memory_guard.clear_now("ASR model cache unavailable");
+        }
+    }
     let aligner = load_aligner_after_transcription(
         &app,
         started,
@@ -579,7 +622,9 @@ pub fn transcribe_batch(
         results.push(result);
     }
     drop(aligner);
-    memory_guard.clear_now("ForcedAligner unloaded after batch transcription");
+    if use_forced_aligner {
+        memory_guard.clear_now("ForcedAligner unloaded after batch transcription");
+    }
 
     emit_progress(
         &app,
@@ -637,6 +682,7 @@ struct ProgressMetrics {
     processed_audio_ms: Option<u64>,
     total_speech_ms: Option<u64>,
     skipped_silence_ms: Option<u64>,
+    partial_segments_start: Option<usize>,
     partial_segments: Option<Vec<TranscriptSegment>>,
     timings: Option<TranscriptionTimings>,
 }
@@ -682,6 +728,7 @@ fn emit_progress_with_metrics(
         processed_audio_ms: metrics.processed_audio_ms,
         total_speech_ms: metrics.total_speech_ms,
         skipped_silence_ms: metrics.skipped_silence_ms,
+        partial_segments_start: metrics.partial_segments_start,
         partial_segments: metrics.partial_segments,
         timings: metrics.timings,
     });
@@ -704,6 +751,7 @@ fn emit_chunk_progress(
     eta_ms: Option<u128>,
     phase: &str,
     message: &str,
+    partial_segments_start: Option<usize>,
     partial_segments: Option<Vec<TranscriptSegment>>,
     timings: Option<TranscriptionTimings>,
 ) {
@@ -727,6 +775,7 @@ fn emit_chunk_progress(
             processed_audio_ms: Some(processed_audio_ms),
             total_speech_ms: Some(total_speech_ms),
             skipped_silence_ms: Some(skipped_silence_ms),
+            partial_segments_start,
             partial_segments,
             timings,
         }),
@@ -796,6 +845,141 @@ fn load_engine(model_path: &Path, device: Device) -> AppResult<AsrInference> {
     })
 }
 
+struct CachedAsrEngine {
+    model_path: PathBuf,
+    engine: AsrInference,
+    last_used: Instant,
+    generation: u64,
+}
+
+fn asr_engine_cache() -> &'static Mutex<Option<CachedAsrEngine>> {
+    ASR_ENGINE_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn take_cached_engine() -> Option<CachedAsrEngine> {
+    asr_engine_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
+}
+
+fn should_reuse_cached_engine(
+    cached_model_path: &Path,
+    requested_model_path: &Path,
+    idle: Duration,
+) -> bool {
+    cached_model_path == requested_model_path && idle <= ASR_ENGINE_IDLE_TTL
+}
+
+fn load_engine_for_task(model_path: &Path, device: Device) -> AppResult<AsrInference> {
+    if let Some(cached) = take_cached_engine() {
+        ASR_CACHE_GENERATION.fetch_add(1, Ordering::AcqRel);
+        if should_reuse_cached_engine(&cached.model_path, model_path, cached.last_used.elapsed()) {
+            return Ok(cached.engine);
+        }
+
+        drop(cached);
+        release_mlx_cache("stale or different ASR model unloaded");
+    }
+
+    load_engine(model_path, device)
+}
+
+fn cache_engine(model_path: PathBuf, engine: AsrInference) -> bool {
+    let Some(reaper) = asr_cache_reaper() else {
+        drop(engine);
+        return false;
+    };
+    let generation = ASR_CACHE_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
+    let replaced = asr_engine_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .replace(CachedAsrEngine {
+            model_path,
+            engine,
+            last_used: Instant::now(),
+            generation,
+        });
+    debug_assert!(replaced.is_none());
+    drop(replaced);
+
+    if reaper.send(generation).is_err() {
+        drop(take_cached_engine());
+        return false;
+    }
+    true
+}
+
+fn asr_cache_reaper() -> Option<&'static mpsc::Sender<u64>> {
+    ASR_CACHE_REAPER
+        .get_or_init(|| {
+            let (sender, receiver) = mpsc::channel();
+            match thread::Builder::new()
+                .name("asr-cache-reaper".into())
+                .spawn(move || run_asr_cache_reaper(receiver))
+            {
+                Ok(_) => Some(sender),
+                Err(error) => {
+                    eprintln!("failed to start ASR cache reaper: {error}");
+                    None
+                }
+            }
+        })
+        .as_ref()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CacheReaperAction {
+    KeepRunning,
+    ExpireCurrent,
+}
+
+fn cache_reaper_action(observed_generation: u64, current_generation: u64) -> CacheReaperAction {
+    if observed_generation == current_generation {
+        CacheReaperAction::ExpireCurrent
+    } else {
+        CacheReaperAction::KeepRunning
+    }
+}
+
+fn run_asr_cache_reaper(receiver: mpsc::Receiver<u64>) {
+    while let Ok(mut generation) = receiver.recv() {
+        loop {
+            match receiver.recv_timeout(ASR_ENGINE_IDLE_TTL) {
+                Ok(newer_generation) => generation = newer_generation,
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            }
+        }
+
+        let _inference_guard = inference_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if cache_reaper_action(generation, ASR_CACHE_GENERATION.load(Ordering::Acquire))
+            == CacheReaperAction::KeepRunning
+        {
+            continue;
+        }
+
+        let expired = {
+            let mut cache = asr_engine_cache()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            if cache.as_ref().is_some_and(|cached| {
+                cached.generation == generation && cached.last_used.elapsed() >= ASR_ENGINE_IDLE_TTL
+            }) {
+                cache.take()
+            } else {
+                None
+            }
+        };
+        if expired.is_some() {
+            drop(expired);
+            release_mlx_cache("idle ASR model TTL expired");
+        }
+    }
+}
+
 fn load_forced_aligner(model_path: &Path, device: Device) -> AppResult<ForcedAlignerInference> {
     ForcedAlignerInference::load(model_path, device)
 }
@@ -835,13 +1019,13 @@ fn load_aligner_after_transcription(
 struct PendingChunk {
     chunk_index: usize,
     range: AudioRange,
-    samples: Vec<i16>,
     raw_text: String,
     output_text: String,
     alignment_language: Option<&'static str>,
 }
 
 struct PendingTranscription {
+    prepared_audio: audio::PreparedAudio,
     audio_path: String,
     options: TranscribeOptions,
     file_index: usize,
@@ -889,6 +1073,10 @@ impl MlxTaskMemoryGuard {
 
     fn clear_now(&mut self, stage: &str) {
         release_mlx_cache(stage);
+        self.cleaned = true;
+    }
+
+    fn preserve_cache(&mut self) {
         self.cleaned = true;
     }
 }
@@ -1066,6 +1254,7 @@ fn transcribe_with_context(
             processed_audio_ms: Some(0),
             total_speech_ms: Some(total_chunk_audio_ms),
             skipped_silence_ms: Some(skipped_silence_ms),
+            partial_segments_start: None,
             partial_segments: None,
             timings: Some(timings.clone()),
         }),
@@ -1079,6 +1268,7 @@ fn transcribe_with_context(
     for (index, chunk) in chunks.iter().enumerate() {
         check_cancelled(cancel)?;
         let chunk_index = index + 1;
+        let confirmed_segment_count = vad_estimated_segments.len();
         let before_ratio = processed_asr_work_ms as f64 / total_asr_work_ms as f64;
         let before_percent = progress_between(
             progress_between(range_start, range_end, TRANSCRIBE_PHASE_START),
@@ -1110,7 +1300,8 @@ fn transcribe_with_context(
             before_eta_ms,
             "transcribingSegments",
             &format!("轉錄第 {chunk_index} / {total_chunks} 個有聲片段"),
-            Some(vad_estimated_segments.clone()),
+            Some(confirmed_segment_count),
+            Some(Vec::new()),
             Some(timings.clone()),
         );
 
@@ -1161,10 +1352,10 @@ fn transcribe_with_context(
                                 return StreamingControl::Stop;
                             }
                         };
-                        let partial_segments = build_streaming_partial_segments(
-                            &vad_estimated_segments,
+                        let partial_segments = build_approximate_segments_with_offset(
                             &partial_text,
-                            *chunk,
+                            chunk.duration_ms(),
+                            chunk.start_ms(),
                             options.segment_by_punctuation,
                         );
                         let stream_percent = progress_between(
@@ -1190,6 +1381,7 @@ fn transcribe_with_context(
                             }),
                             "transcribingSegments",
                             &format!("轉錄第 {chunk_index} / {total_chunks} 個有聲片段"),
+                            Some(confirmed_segment_count),
                             Some(partial_segments),
                             Some(timings.clone()),
                         );
@@ -1261,7 +1453,6 @@ fn transcribe_with_context(
             pending_chunks.push(PendingChunk {
                 chunk_index,
                 range: *chunk,
-                samples: chunk_samples,
                 raw_text: raw_chunk_text,
                 output_text: chunk_text,
                 alignment_language,
@@ -1294,7 +1485,8 @@ fn transcribe_with_context(
             after_eta_ms,
             "transcribingSegments",
             &format!("完成第 {chunk_index} / {total_chunks} 個有聲片段"),
-            Some(vad_estimated_segments.clone()),
+            Some(confirmed_segment_count),
+            Some(vad_estimated_segments[confirmed_segment_count..].to_vec()),
             Some(timings.clone()),
         );
     }
@@ -1311,6 +1503,7 @@ fn transcribe_with_context(
     };
 
     Ok(PendingTranscription {
+        prepared_audio,
         audio_path: audio_path.to_string(),
         options: options.clone(),
         file_index,
@@ -1382,10 +1575,15 @@ fn finalize_transcription_with_context(
                         "對齊第 {} / {} 個片段的時間戳",
                         chunk.chunk_index, pending.total_chunks
                     ),
-                    Some(vad_estimated_segments.clone()),
+                    None,
+                    None,
                     Some(pending.timings.clone()),
                 );
-                let chunk_samples_f32 = normalized_i16_to_f32(&chunk.samples);
+                let chunk_samples = audio::read_normalized_i16_range(
+                    pending.prepared_audio.inference_path(),
+                    chunk.range.start_sample..chunk.range.end_sample,
+                )?;
+                let chunk_samples_f32 = normalized_i16_to_f32(&chunk_samples);
                 let alignment_result =
                     aligner.align_samples(&chunk_samples_f32, &chunk.raw_text, language);
                 release_mlx_cache("ForcedAligner chunk completed");
@@ -1483,6 +1681,7 @@ fn finalize_transcription_with_context(
             processed_audio_ms: Some(pending.total_speech_ms),
             total_speech_ms: Some(pending.total_speech_ms),
             skipped_silence_ms: Some(pending.skipped_silence_ms),
+            partial_segments_start: Some(0),
             partial_segments: Some(vad_estimated_segments),
             timings: Some(pending.timings.clone()),
         }),
@@ -1812,6 +2011,7 @@ fn build_approximate_segments(text: &str, audio_ms: u64) -> Vec<TranscriptSegmen
     build_approximate_segments_with_offset(text, audio_ms, 0, true)
 }
 
+#[cfg(test)]
 fn build_streaming_partial_segments(
     completed_segments: &[TranscriptSegment],
     partial_text: &str,
@@ -2176,6 +2376,36 @@ mod tests {
         assert_eq!(
             estimate_remaining_ms_from_elapsed(10_000, 100_000, 100_000),
             None
+        );
+    }
+
+    #[test]
+    fn reuses_only_the_same_asr_model_within_the_idle_ttl() {
+        let cached = Path::new("/models/qwen3-asr-0.6b");
+
+        assert!(should_reuse_cached_engine(
+            cached,
+            cached,
+            ASR_ENGINE_IDLE_TTL - Duration::from_secs(1)
+        ));
+        assert!(!should_reuse_cached_engine(
+            cached,
+            Path::new("/models/qwen3-asr-1.7b"),
+            Duration::ZERO
+        ));
+        assert!(!should_reuse_cached_engine(
+            cached,
+            cached,
+            ASR_ENGINE_IDLE_TTL + Duration::from_secs(1)
+        ));
+    }
+
+    #[test]
+    fn stale_cache_generation_keeps_reaper_alive_for_newer_work() {
+        assert_eq!(cache_reaper_action(41, 42), CacheReaperAction::KeepRunning);
+        assert_eq!(
+            cache_reaper_action(42, 42),
+            CacheReaperAction::ExpireCurrent
         );
     }
 

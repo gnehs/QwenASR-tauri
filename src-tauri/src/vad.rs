@@ -2,12 +2,12 @@ use std::{
     io::Cursor,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, OnceLock,
     },
     thread,
 };
 
-use rustfft::{num_complex::Complex32, FftPlanner};
+use rustfft::{num_complex::Complex32, Fft, FftPlanner};
 use serde::Deserialize;
 use tract_onnx::prelude::*;
 
@@ -15,6 +15,12 @@ use crate::audio;
 use crate::error::{AppError, AppResult};
 
 type VadOnnxModel = TypedRunnableModel<TypedModel>;
+
+static VAD_ONNX_MODEL: OnceLock<Result<Arc<VadOnnxModel>, String>> = OnceLock::new();
+static VAD_CMVN: OnceLock<Result<Cmvn, String>> = OnceLock::new();
+static VAD_MEL_FILTERBANK: OnceLock<Vec<Vec<f32>>> = OnceLock::new();
+static VAD_HANNING_WINDOW: OnceLock<Vec<f32>> = OnceLock::new();
+static VAD_FFT: OnceLock<Arc<dyn Fft<f32>>> = OnceLock::new();
 
 const MODEL_ONNX: &[u8] = include_bytes!("../resources/firered-vad-onnx/model.onnx");
 const CMVN_JSON: &str = include_str!("../resources/firered-vad-onnx/cmvn.json");
@@ -131,12 +137,14 @@ fn detect_speech_segments<F>(samples: &[i16], progress: &mut F) -> AppResult<Vec
 where
     F: FnMut(VadProgress),
 {
-    let features = extract_cmvn_fbank_with_progress(samples, progress)?;
-    if features.frame_count == 0 {
+    emit_vad_progress(progress, 0.03, "讀取 FireRedVAD 正規化參數");
+    validate_cached_cmvn()?;
+    let frame_count = fbank_frame_count(samples.len());
+    if frame_count == 0 {
         return Ok(Vec::new());
     }
 
-    let probs = run_onnx(features, progress)?;
+    let probs = run_onnx(samples, frame_count, progress)?;
     emit_vad_progress(progress, 0.95, "整理 FireRedVAD 輸出");
 
     let decisions = VadPostprocessor::default().process(&probs);
@@ -148,59 +156,47 @@ where
     Ok(merge_overlapping_ranges(segments))
 }
 
-struct FbankFeatures {
-    frame_count: usize,
-    values: Vec<f32>,
+fn fbank_frame_count(sample_count: usize) -> usize {
+    let frame_len = ms_to_samples(FRAME_LENGTH_MS);
+    if sample_count < frame_len {
+        return 0;
+    }
+
+    1 + (sample_count - frame_len) / ms_to_samples(FRAME_SHIFT_MS)
 }
 
-#[cfg(test)]
-fn extract_cmvn_fbank(samples: &[i16]) -> AppResult<FbankFeatures> {
-    extract_cmvn_fbank_with_progress(samples, &mut |_| {})
-}
-
-fn extract_cmvn_fbank_with_progress<F>(
-    samples: &[i16],
-    progress: &mut F,
-) -> AppResult<FbankFeatures>
-where
-    F: FnMut(VadProgress),
-{
-    emit_vad_progress(progress, 0.03, "讀取 FireRedVAD 正規化參數");
-
-    let cmvn = parse_cmvn()?;
+fn validate_cached_cmvn() -> AppResult<()> {
+    let cmvn = cached_cmvn()?;
     if cmvn.means.len() != NUM_MEL_BINS || cmvn.inverse_std_variances.len() != NUM_MEL_BINS {
         return Err(AppError::Transcription(
             "FireRedVAD CMVN parameters have an unexpected dimension.".into(),
         ));
     }
+    Ok(())
+}
 
+fn extract_cmvn_fbank_window(
+    samples: &[i16],
+    frame_start: usize,
+    frame_end: usize,
+) -> AppResult<Vec<f32>> {
+    let cmvn = cached_cmvn()?;
+    debug_assert!(frame_start <= frame_end);
     let frame_len = ms_to_samples(FRAME_LENGTH_MS);
     let frame_shift = ms_to_samples(FRAME_SHIFT_MS);
-    if samples.len() < frame_len {
-        return Ok(FbankFeatures {
-            frame_count: 0,
-            values: Vec::new(),
-        });
-    }
-
-    emit_vad_progress(progress, 0.08, "建立 FireRedVAD 音訊特徵");
-
-    let mel_filterbank = build_mel_filterbank();
-    let window = hanning_window(frame_len);
-    let preemphasized = preemphasize(samples);
-    let frame_count = 1 + (preemphasized.len() - frame_len) / frame_shift;
-    let mut planner = FftPlanner::<f32>::new();
-    let fft = planner.plan_fft_forward(N_FFT);
-    let mut features = Vec::with_capacity(frame_count * NUM_MEL_BINS);
-    let progress_step = (frame_count / 40).max(1);
+    let mel_filterbank = cached_mel_filterbank();
+    let window = cached_hanning_window(frame_len);
+    let fft = cached_fft();
+    let mut features = Vec::with_capacity((frame_end - frame_start) * NUM_MEL_BINS);
     let mut spectrum = vec![Complex32::new(0.0, 0.0); N_FFT];
     let mut power = vec![0.0f32; N_FFT / 2 + 1];
 
-    for frame_index in 0..frame_count {
+    for frame_index in frame_start..frame_end {
         let start = frame_index * frame_shift;
+        debug_assert!(start + frame_len <= samples.len());
         spectrum.fill(Complex32::new(0.0, 0.0));
         for offset in 0..frame_len {
-            spectrum[offset].re = preemphasized[start + offset] * window[offset];
+            spectrum[offset].re = preemphasized_sample(samples, start + offset) * window[offset];
         }
 
         fft.process(&mut spectrum);
@@ -219,45 +215,30 @@ where
             features
                 .push((log_mel - cmvn.means[mel_index]) * cmvn.inverse_std_variances[mel_index]);
         }
-
-        if frame_index == 0
-            || (frame_index + 1) % progress_step == 0
-            || frame_index + 1 == frame_count
-        {
-            let ratio = (frame_index + 1) as f64 / frame_count as f64;
-            emit_vad_progress(progress, 0.08 + 0.64 * ratio, "萃取 FireRedVAD 音訊特徵");
-        }
     }
 
-    Ok(FbankFeatures {
-        frame_count,
-        values: features,
-    })
+    Ok(features)
 }
 
-fn run_onnx<F>(features: FbankFeatures, progress: &mut F) -> AppResult<Vec<f32>>
+fn run_onnx<F>(samples: &[i16], frame_count: usize, progress: &mut F) -> AppResult<Vec<f32>>
 where
     F: FnMut(VadProgress),
 {
-    emit_vad_progress(progress, 0.76, "載入 FireRedVAD ONNX");
+    emit_vad_progress(progress, 0.08, "載入 FireRedVAD ONNX");
 
-    let model = Arc::new(load_onnx_model()?);
+    let model = cached_onnx_model()?;
 
-    emit_vad_progress(progress, 0.86, "執行 FireRedVAD 推論");
+    emit_vad_progress(progress, 0.10, "分窗萃取特徵並執行 FireRedVAD");
 
-    let FbankFeatures {
-        frame_count,
-        values,
-    } = features;
     let windows = onnx_windows(frame_count);
     let worker_count = onnx_worker_count(windows.len());
 
     let probabilities = if worker_count == 1 {
-        run_onnx_sequential(model.as_ref(), &values, frame_count, &windows, progress)?
+        run_onnx_sequential(model.as_ref(), samples, frame_count, &windows, progress)?
     } else {
         run_onnx_parallel(
             model,
-            &values,
+            samples,
             frame_count,
             &windows,
             worker_count,
@@ -284,9 +265,20 @@ fn load_onnx_model() -> AppResult<VadOnnxModel> {
         })
 }
 
+fn cached_onnx_model() -> AppResult<Arc<VadOnnxModel>> {
+    match VAD_ONNX_MODEL.get_or_init(|| {
+        load_onnx_model()
+            .map(Arc::new)
+            .map_err(|error| error.to_string())
+    }) {
+        Ok(model) => Ok(Arc::clone(model)),
+        Err(error) => Err(AppError::Transcription(error.clone())),
+    }
+}
+
 fn run_onnx_sequential<F>(
     model: &VadOnnxModel,
-    values: &[f32],
+    samples: &[i16],
     frame_count: usize,
     windows: &[OnnxWindow],
     progress: &mut F,
@@ -296,14 +288,14 @@ where
 {
     let mut probabilities = vec![0.0f32; frame_count];
     for window in windows.iter().copied() {
-        let inference = infer_onnx_window(model, values, window)?;
+        let inference = infer_onnx_window(model, samples, window)?;
         copy_window_inference(&mut probabilities, inference);
 
         let inference_ratio = window.output_end as f64 / frame_count as f64;
         emit_vad_progress(
             progress,
-            0.86 + 0.07 * inference_ratio,
-            "執行 FireRedVAD 推論",
+            0.10 + 0.83 * inference_ratio,
+            "分窗萃取特徵並執行 FireRedVAD",
         );
     }
 
@@ -312,7 +304,7 @@ where
 
 fn run_onnx_parallel<F>(
     model: Arc<VadOnnxModel>,
-    values: &[f32],
+    samples: &[i16],
     frame_count: usize,
     windows: &[OnnxWindow],
     worker_count: usize,
@@ -321,7 +313,7 @@ fn run_onnx_parallel<F>(
 where
     F: FnMut(VadProgress),
 {
-    let (sender, receiver) = mpsc::channel::<AppResult<WindowInference>>();
+    let (sender, receiver) = mpsc::sync_channel::<AppResult<WindowInference>>(worker_count.max(1));
     let stop_requested = Arc::new(AtomicBool::new(false));
 
     thread::scope(|scope| {
@@ -336,7 +328,7 @@ where
                         break;
                     }
 
-                    let result = infer_onnx_window(model.as_ref(), values, window);
+                    let result = infer_onnx_window(model.as_ref(), samples, window);
                     let should_stop = result.is_err();
                     if should_stop {
                         stop_requested.store(true, Ordering::Relaxed);
@@ -364,8 +356,8 @@ where
                     let inference_ratio = completed_output_frames as f64 / frame_count as f64;
                     emit_vad_progress(
                         progress,
-                        0.86 + 0.07 * inference_ratio,
-                        "執行 FireRedVAD 推論",
+                        0.10 + 0.83 * inference_ratio,
+                        "分窗萃取特徵並執行 FireRedVAD",
                     );
                 }
                 Err(error) => {
@@ -392,17 +384,15 @@ struct WindowInference {
 
 fn infer_onnx_window(
     model: &VadOnnxModel,
-    values: &[f32],
+    samples: &[i16],
     window: OnnxWindow,
 ) -> AppResult<WindowInference> {
     let window_frames = window.input_end - window.input_start;
-    let feature_start = window.input_start * NUM_MEL_BINS;
-    let feature_end = window.input_end * NUM_MEL_BINS;
-    let input = tract_ndarray::Array3::from_shape_vec(
-        (1, window_frames, NUM_MEL_BINS),
-        values[feature_start..feature_end].to_vec(),
-    )
-    .map_err(|error| AppError::Transcription(format!("FireRedVAD input shape failed: {error}")))?;
+    let features = extract_cmvn_fbank_window(samples, window.input_start, window.input_end)?;
+    let input = tract_ndarray::Array3::from_shape_vec((1, window_frames, NUM_MEL_BINS), features)
+        .map_err(|error| {
+        AppError::Transcription(format!("FireRedVAD input shape failed: {error}"))
+    })?;
     let outputs = model
         .run(tvec!(input.into_tensor().into()))
         .map_err(|error| {
@@ -537,6 +527,29 @@ where
 fn parse_cmvn() -> AppResult<Cmvn> {
     serde_json::from_str(CMVN_JSON)
         .map_err(|error| AppError::Transcription(format!("FireRedVAD CMVN parse failed: {error}")))
+}
+
+fn cached_cmvn() -> AppResult<&'static Cmvn> {
+    match VAD_CMVN.get_or_init(|| parse_cmvn().map_err(|error| error.to_string())) {
+        Ok(cmvn) => Ok(cmvn),
+        Err(error) => Err(AppError::Transcription(error.clone())),
+    }
+}
+
+fn cached_mel_filterbank() -> &'static [Vec<f32>] {
+    VAD_MEL_FILTERBANK.get_or_init(build_mel_filterbank)
+}
+
+fn cached_hanning_window(frame_len: usize) -> &'static [f32] {
+    debug_assert_eq!(frame_len, ms_to_samples(FRAME_LENGTH_MS));
+    VAD_HANNING_WINDOW.get_or_init(|| hanning_window(frame_len))
+}
+
+fn cached_fft() -> Arc<dyn Fft<f32>> {
+    Arc::clone(VAD_FFT.get_or_init(|| {
+        let mut planner = FftPlanner::<f32>::new();
+        planner.plan_fft_forward(N_FFT)
+    }))
 }
 
 #[derive(Debug, Clone)]
@@ -815,17 +828,13 @@ fn hanning_window(frame_len: usize) -> Vec<f32> {
         .collect()
 }
 
-fn preemphasize(samples: &[i16]) -> Vec<f32> {
-    let mut output = Vec::with_capacity(samples.len());
-    for (index, sample) in samples.iter().enumerate() {
-        let value = *sample as f32;
-        if index == 0 {
-            output.push(value);
-        } else {
-            output.push(value - PRE_EMPHASIS * samples[index - 1] as f32);
-        }
+fn preemphasized_sample(samples: &[i16], index: usize) -> f32 {
+    let value = samples[index] as f32;
+    if index == 0 {
+        value
+    } else {
+        value - PRE_EMPHASIS * samples[index - 1] as f32
     }
-    output
 }
 
 fn merge_overlapping_ranges(mut ranges: Vec<AudioRange>) -> Vec<AudioRange> {
@@ -1022,10 +1031,99 @@ mod tests {
     #[test]
     fn extracts_expected_number_of_frames() {
         let samples = vec![1_000i16; ms_to_samples(1_000)];
-        let features = extract_cmvn_fbank(&samples).unwrap();
+        let frame_count = fbank_frame_count(samples.len());
+        let features = extract_cmvn_fbank_window(&samples, 0, frame_count).unwrap();
 
-        assert_eq!(features.frame_count, 98);
-        assert_eq!(features.values.len(), 98 * NUM_MEL_BINS);
+        assert_eq!(frame_count, 98);
+        assert_eq!(features.len(), 98 * NUM_MEL_BINS);
+    }
+
+    #[test]
+    fn windowed_features_preserve_absolute_overlap_frames() {
+        let frame_count = ONNX_WINDOW_FRAMES + ONNX_OVERLAP_FRAMES + 7;
+        let sample_count =
+            ms_to_samples(FRAME_LENGTH_MS) + (frame_count - 1) * ms_to_samples(FRAME_SHIFT_MS);
+        let samples = (0..sample_count)
+            .map(|index| ((index % 4_001) as i32 - 2_000) as i16)
+            .collect::<Vec<_>>();
+        let all = extract_cmvn_fbank_window(&samples, 0, frame_count).unwrap();
+        let overlap_start = ONNX_WINDOW_FRAMES - ONNX_OVERLAP_FRAMES;
+        let overlap = extract_cmvn_fbank_window(&samples, overlap_start, frame_count).unwrap();
+
+        assert_eq!(
+            overlap,
+            all[overlap_start * NUM_MEL_BINS..frame_count * NUM_MEL_BINS]
+        );
+    }
+
+    #[test]
+    fn onnx_windows_bound_high_dimensional_feature_memory() {
+        let windows = onnx_windows(100_000);
+        let max_window_frames = windows
+            .iter()
+            .map(|window| window.input_end - window.input_start)
+            .max()
+            .unwrap();
+
+        assert_eq!(max_window_frames, ONNX_WINDOW_FRAMES);
+        assert_eq!(
+            max_window_frames * NUM_MEL_BINS * std::mem::size_of::<f32>(),
+            480_000
+        );
+    }
+
+    #[test]
+    fn parallel_windowed_onnx_matches_sequential_overlap_output() {
+        let frame_count = ONNX_WINDOW_FRAMES + 1;
+        let sample_count =
+            ms_to_samples(FRAME_LENGTH_MS) + (frame_count - 1) * ms_to_samples(FRAME_SHIFT_MS);
+        let samples = vec![0i16; sample_count];
+        let windows = onnx_windows(frame_count);
+        let model = cached_onnx_model().unwrap();
+        let expected =
+            run_onnx_sequential(model.as_ref(), &samples, frame_count, &windows, &mut |_| {})
+                .unwrap();
+        let actual =
+            run_onnx_parallel(model, &samples, frame_count, &windows, 2, &mut |_| {}).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn computes_preemphasis_without_materializing_the_audio() {
+        let samples = [1_000i16, 2_000, -1_000, 500];
+        let expected = [
+            1_000.0,
+            2_000.0 - PRE_EMPHASIS * 1_000.0,
+            -1_000.0 - PRE_EMPHASIS * 2_000.0,
+            500.0 - PRE_EMPHASIS * -1_000.0,
+        ];
+
+        for (index, expected) in expected.into_iter().enumerate() {
+            assert_eq!(preemphasized_sample(&samples, index), expected);
+        }
+    }
+
+    #[test]
+    fn reuses_cached_vad_resources() {
+        let first_cmvn = cached_cmvn().unwrap();
+        let second_cmvn = cached_cmvn().unwrap();
+        let first_filters = cached_mel_filterbank();
+        let second_filters = cached_mel_filterbank();
+        let first_fft = cached_fft();
+        let second_fft = cached_fft();
+
+        assert!(std::ptr::eq(first_cmvn, second_cmvn));
+        assert!(std::ptr::eq(first_filters, second_filters));
+        assert!(Arc::ptr_eq(&first_fft, &second_fft));
+    }
+
+    #[test]
+    fn reuses_compiled_onnx_model() {
+        let first = cached_onnx_model().unwrap();
+        let second = cached_onnx_model().unwrap();
+
+        assert!(Arc::ptr_eq(&first, &second));
     }
 
     #[test]

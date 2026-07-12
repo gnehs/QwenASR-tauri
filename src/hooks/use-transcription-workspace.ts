@@ -26,6 +26,7 @@ import type {
   TaskDraft,
   TranscriptionProgress,
   TranscriptionResult,
+  TranscriptionResultPayload,
   TranscriptionTask,
 } from "@/types/transcription";
 
@@ -53,6 +54,7 @@ const supportedExtensions = new Set(
 );
 let notificationPermissionRequested = false;
 const downloadSpeedWindowMs = 5000;
+const progressUpdateIntervalMs = 200;
 
 type DownloadSpeedSample = {
   timestamp: number;
@@ -65,6 +67,11 @@ type DownloadSpeedMovingAverageTracker = {
   completedBeforeCurrentFile: number;
   currentFileCompleted: number;
   samples: DownloadSpeedSample[];
+};
+
+type PendingTranscriptionProgress = {
+  progress: TranscriptionProgress;
+  updatedAt: number;
 };
 
 function readStoredSelectedModelId() {
@@ -346,8 +353,6 @@ export function useTranscriptionWorkspace() {
     downloadMovingAverageSpeedBytesPerSec,
     setDownloadMovingAverageSpeedBytesPerSec,
   ] = useState(0);
-  const [transcriptionProgress, setTranscriptionProgress] =
-    useState<TranscriptionProgress | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [isConfirmingTasks, setIsConfirmingTasks] = useState(false);
   const [isTaskModelDownloadDialogOpen, setTaskModelDownloadDialogOpen] =
@@ -358,7 +363,15 @@ export function useTranscriptionWorkspace() {
   const [deletingModelId, setDeletingModelId] = useState<string | null>(null);
   const [cancellingTaskId, setCancellingTaskId] = useState<string | null>(null);
   const runningTaskIdRef = useRef<string | null>(null);
+  const queueHasRunRef = useRef(false);
   const cancellingTaskIdRef = useRef<string | null>(null);
+  const pendingTranscriptionProgressRef =
+    useRef<PendingTranscriptionProgress | null>(null);
+  const lastTranscriptionProgressRef = useRef<TranscriptionProgress | null>(
+    null,
+  );
+  const progressFlushTimerRef = useRef<number | null>(null);
+  const lastProgressCommitAtRef = useRef(0);
   const openTaskDialogRef = useRef<(paths: string[]) => void>(() => {});
   const downloadSpeedMovingAverageRef =
     useRef<DownloadSpeedMovingAverageTracker | null>(null);
@@ -422,10 +435,94 @@ export function useTranscriptionWorkspace() {
     [defaultModelId, options, outputDir, t],
   );
 
+  const clearPendingTranscriptionProgress = useCallback(() => {
+    if (progressFlushTimerRef.current !== null) {
+      window.clearTimeout(progressFlushTimerRef.current);
+      progressFlushTimerRef.current = null;
+    }
+    pendingTranscriptionProgressRef.current = null;
+  }, []);
+
+  const flushTranscriptionProgress = useCallback((taskId: string) => {
+    progressFlushTimerRef.current = null;
+    const pending = pendingTranscriptionProgressRef.current;
+    pendingTranscriptionProgressRef.current = null;
+    if (!pending || runningTaskIdRef.current !== taskId) return;
+
+    lastTranscriptionProgressRef.current = pending.progress;
+    lastProgressCommitAtRef.current = Date.now();
+    setTasks((current) => {
+      const index = current.findIndex((item) => item.id === taskId);
+      if (index === -1) return current;
+
+      const task = current[index];
+      const nextTasks = current.slice();
+      nextTasks[index] = {
+        ...task,
+        progress: pending.progress,
+        progressUpdatedAt: pending.updatedAt,
+      };
+      return nextTasks;
+    });
+  }, []);
+
+  const queueTranscriptionProgress = useCallback(
+    (taskId: string, progress: TranscriptionProgress) => {
+      if (runningTaskIdRef.current !== taskId) return;
+
+      const previous =
+        pendingTranscriptionProgressRef.current?.progress ??
+        lastTranscriptionProgressRef.current;
+      const previousSegments = previous?.partialSegments ?? [];
+      const partialSegments =
+        progress.partialSegmentsStart === null
+          ? (previous?.partialSegments ?? null)
+          : [
+              ...previousSegments.slice(
+                0,
+                Math.max(
+                  0,
+                  Math.min(
+                    progress.partialSegmentsStart,
+                    previousSegments.length,
+                  ),
+                ),
+              ),
+              ...(progress.partialSegments ?? []),
+            ];
+      pendingTranscriptionProgressRef.current = {
+        progress: {
+          ...progress,
+          partialSegments,
+        },
+        updatedAt: Date.now(),
+      };
+
+      if (progressFlushTimerRef.current !== null) return;
+
+      const remainingMs = Math.max(
+        0,
+        progressUpdateIntervalMs -
+          (Date.now() - lastProgressCommitAtRef.current),
+      );
+      if (remainingMs === 0) {
+        flushTranscriptionProgress(taskId);
+        return;
+      }
+
+      progressFlushTimerRef.current = window.setTimeout(() => {
+        flushTranscriptionProgress(taskId);
+      }, remainingMs);
+    },
+    [flushTranscriptionProgress],
+  );
+
   const runQueuedTask = useCallback(
     async (task: TranscriptionTask) => {
       runningTaskIdRef.current = task.id;
-      setTranscriptionProgress(null);
+      clearPendingTranscriptionProgress();
+      lastTranscriptionProgressRef.current = null;
+      lastProgressCommitAtRef.current = 0;
       setTasks((current) =>
         current.map((item) =>
           item.id === task.id
@@ -446,45 +543,24 @@ export function useTranscriptionWorkspace() {
       try {
         const onProgress = new Channel<TranscriptionProgress>();
         onProgress.onmessage = (progress) => {
-          if (runningTaskIdRef.current !== task.id) return;
-
-          const progressUpdatedAt = Date.now();
-          setTranscriptionProgress((previous) => ({
-            ...progress,
-            partialSegments:
-              progress.partialSegments ?? previous?.partialSegments ?? null,
-          }));
-          setTasks((current) =>
-            current.map((item) => {
-              if (item.id !== task.id) return item;
-
-              const nextProgress = {
-                ...progress,
-                partialSegments:
-                  progress.partialSegments ??
-                  item.progress?.partialSegments ??
-                  null,
-              };
-              return {
-                ...item,
-                progress: nextProgress,
-                progressUpdatedAt,
-              };
-            }),
-          );
+          queueTranscriptionProgress(task.id, progress);
         };
 
         // A queued task owns the worker until its complete command response arrives.
         // The batch command intentionally runs ASR for later files before it finalizes
         // the current file, which does not match the task queue's end-to-end ordering.
-        const result = await invoke<TranscriptionResult>("transcribe_file", {
-          request: {
-            taskId: task.id,
-            audioPath: task.audioPath,
-            options: buildOptionsPayload(task),
+        const result = await invoke<TranscriptionResultPayload>(
+          "transcribe_file",
+          {
+            request: {
+              taskId: task.id,
+              audioPath: task.audioPath,
+              options: buildOptionsPayload(task),
+            },
+            onProgress,
           },
-          onProgress,
-        });
+        );
+        const { words: _unusedWords, ...storedResult } = result;
 
         setTasks((current) =>
           current.map((item) =>
@@ -494,7 +570,7 @@ export function useTranscriptionWorkspace() {
                   status: "completed",
                   progress: null,
                   progressUpdatedAt: null,
-                  result,
+                  result: storedResult,
                   completedAt: Date.now(),
                 }
               : item,
@@ -508,7 +584,7 @@ export function useTranscriptionWorkspace() {
         toast.success(t`${basename(task.audioPath)} 轉錄完成`);
         void sendTaskNotification(
           task,
-          result,
+          storedResult,
           t`轉錄完成`,
           t`已完成`,
           t`，已輸出`,
@@ -550,15 +626,24 @@ export function useTranscriptionWorkspace() {
           });
         }
       } finally {
+        clearPendingTranscriptionProgress();
         runningTaskIdRef.current = null;
         if (cancellingTaskIdRef.current === task.id) {
           cancellingTaskIdRef.current = null;
           setCancellingTaskId(null);
         }
-        setTranscriptionProgress(null);
+        lastTranscriptionProgressRef.current = null;
+        lastProgressCommitAtRef.current = 0;
       }
     },
-    [t],
+    [clearPendingTranscriptionProgress, queueTranscriptionProgress, t],
+  );
+
+  useEffect(
+    () => () => {
+      clearPendingTranscriptionProgress();
+    },
+    [clearPendingTranscriptionProgress],
   );
 
   useEffect(() => {
@@ -668,6 +753,20 @@ export function useTranscriptionWorkspace() {
       void runQueuedTask(firstTask);
     }
   }, [runQueuedTask, tasks]);
+
+  useEffect(() => {
+    const hasActiveTask = tasks.some(
+      (task) => task.status === "queued" || task.status === "running",
+    );
+    if (hasActiveTask) {
+      queueHasRunRef.current = true;
+      return;
+    }
+
+    if (!queueHasRunRef.current) return;
+    queueHasRunRef.current = false;
+    void invoke<boolean>("release_cached_engine").catch(() => {});
+  }, [tasks]);
 
   async function refreshRuntime() {
     await Promise.all([refreshModels(), refreshFfmpeg()]);
@@ -862,6 +961,7 @@ export function useTranscriptionWorkspace() {
       setOptions(taskDraft.options);
       writeStoredTranscriptionOptions(taskDraft.options);
       setOutputDir(taskDraft.outputDir);
+      setTaskDraft((current) => ({ ...current, files: [] }));
       setTaskDialogOpen(false);
       setTaskModelDownloadDialogOpen(false);
       toast.success(t`已加入 ${nextTasks.length} 個轉錄任務`);
@@ -949,7 +1049,6 @@ export function useTranscriptionWorkspace() {
     options,
     downloadProgress,
     downloadMovingAverageSpeedBytesPerSec,
-    transcriptionProgress,
     isDownloading,
     isConfirmingTasks,
     isTaskModelDownloadDialogOpen,

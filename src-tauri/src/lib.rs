@@ -51,9 +51,12 @@ async fn download_model(app: AppHandle, model_id: String) -> AppResult<ModelStat
 
 #[tauri::command]
 async fn delete_model(model_id: String) -> AppResult<ModelStatus> {
-    tauri::async_runtime::spawn_blocking(move || paths::delete_model(&model_id))
-        .await
-        .map_err(|error| error::AppError::Model(error.to_string()))?
+    tauri::async_runtime::spawn_blocking(move || {
+        transcription::release_cached_engine();
+        paths::delete_model(&model_id)
+    })
+    .await
+    .map_err(|error| error::AppError::Model(error.to_string()))?
 }
 
 #[tauri::command]
@@ -79,6 +82,13 @@ fn cancel_transcription(
     task_id: String,
 ) -> bool {
     control.cancel(&task_id)
+}
+
+#[tauri::command]
+async fn release_cached_engine() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(transcription::release_cached_engine)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -343,6 +353,7 @@ pub fn run() {
             delete_model,
             transcribe_file,
             cancel_transcription,
+            release_cached_engine,
             transcribe_batch
         ])
         .run(tauri::generate_context!())

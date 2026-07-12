@@ -67,7 +67,6 @@ export type TranscriptionResult = {
   audioPath: string;
   text: string;
   segments: TranscriptSegment[];
-  words: TranscriptWord[];
   detectedLanguage: string | null;
   languageSource: LanguageSource;
   alignmentStatus: AlignmentStatus;
@@ -77,6 +76,12 @@ export type TranscriptionResult = {
   jsonPath: string | null;
   durationMs: number;
   timings: TranscriptionTimings;
+};
+
+// The native command also returns word-level timestamps. The current UI never
+// renders them, so keep them out of long-lived task state.
+export type TranscriptionResultPayload = TranscriptionResult & {
+  words?: TranscriptWord[];
 };
 
 export type TranscriptionProgress = {
@@ -98,6 +103,7 @@ export type TranscriptionProgress = {
   totalSpeechMs: number | null;
   skippedSilenceMs: number | null;
   partialSegments: TranscriptSegment[] | null;
+  partialSegmentsStart: number | null;
   timings: TranscriptionTimings | null;
 };
 

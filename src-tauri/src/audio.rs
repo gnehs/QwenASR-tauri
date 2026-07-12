@@ -2,6 +2,7 @@ use std::{
     ffi::OsString,
     fs,
     io::ErrorKind,
+    ops::Range,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -86,6 +87,41 @@ pub fn read_normalized_i16(path: &Path) -> AppResult<Vec<i16>> {
 
     reader
         .into_samples::<i16>()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| {
+            AppError::Transcription(format!(
+                "Prepared audio contains invalid PCM samples: {error}"
+            ))
+        })
+}
+
+/// Reads only the requested mono sample range from a normalized WAV.
+///
+/// Keeping alignment inputs on disk avoids retaining every batch item's PCM
+/// buffer in memory while the ASR model is active.
+pub fn read_normalized_i16_range(path: &Path, range: Range<usize>) -> AppResult<Vec<i16>> {
+    let mut reader = hound::WavReader::open(path).map_err(|error| {
+        AppError::Transcription(format!("Prepared audio could not be read as WAV: {error}"))
+    })?;
+    let duration = reader.duration() as usize;
+    validate_asr_wav(reader.spec(), reader.duration()).map_err(|error| match error {
+        FfmpegError::Unavailable => AppError::Transcription("FFmpeg is unavailable.".into()),
+        FfmpegError::Failed(message) => AppError::Transcription(message),
+    })?;
+
+    if range.start > range.end || range.end > duration {
+        return Err(AppError::Transcription(format!(
+            "Prepared audio sample range {}..{} exceeds its {}-sample duration.",
+            range.start, range.end, duration
+        )));
+    }
+
+    reader.seek(range.start as u32).map_err(|error| {
+        AppError::Transcription(format!("Prepared audio sample seek failed: {error}"))
+    })?;
+    reader
+        .samples::<i16>()
+        .take(range.end - range.start)
         .collect::<Result<Vec<_>, _>>()
         .map_err(|error| {
             AppError::Transcription(format!(
@@ -372,6 +408,42 @@ mod tests {
 
         assert!(validate_normalized_wav(&path).is_ok());
 
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn reads_only_the_requested_normalized_sample_range() {
+        let path = test_wav_path("range");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: ASR_SAMPLE_RATE,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+        for sample in 0i16..MIN_ASR_SAMPLES as i16 {
+            writer.write_sample(sample).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let samples = read_normalized_i16_range(&path, 100..125).unwrap();
+
+        assert_eq!(samples, (100i16..125).collect::<Vec<_>>());
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn rejects_normalized_sample_ranges_past_the_end() {
+        let path = test_wav_path("range-out-of-bounds");
+        write_test_wav(&path, MIN_ASR_SAMPLES);
+
+        let error = read_normalized_i16_range(
+            &path,
+            MIN_ASR_SAMPLES as usize - 1..MIN_ASR_SAMPLES as usize + 1,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("exceeds"));
         let _ = fs::remove_file(path);
     }
 

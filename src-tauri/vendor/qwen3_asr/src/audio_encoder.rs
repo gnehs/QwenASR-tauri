@@ -1,6 +1,7 @@
+use crate::tensor::{DType, Device, Tensor};
 use anyhow::Result;
 use std::collections::HashMap;
-use crate::tensor::{DType, Device, Tensor};
+use std::ops::Range;
 
 use crate::config::AudioEncoderConfig;
 use crate::layers::{AudioEncoderLayer, Conv2d, LayerNorm, Linear};
@@ -111,11 +112,7 @@ impl AudioEncoder {
                 DType::Float32,
                 device,
             );
-            let padded_mel = Tensor::cat(
-                &[tail_mel, pad],
-                1,
-            )
-            .unsqueeze(0);
+            let padded_mel = Tensor::cat(&[tail_mel, pad], 1).unsqueeze(0);
             chunk_mels.push(padded_mel);
             chunk_valid_tokens.push(Self::feat_extract_output_length(tail_frames));
         }
@@ -130,7 +127,10 @@ impl AudioEncoder {
 
         // Reshape: (b, channels, freq, time) -> (b, time, channels*freq)
         let (b, c, f, t) = x.size4();
-        let reshaped = x.permute(&[0, 3, 1, 2]).contiguous().reshape(&[b, t, c * f]);
+        let reshaped = x
+            .permute(&[0, 3, 1, 2])
+            .contiguous()
+            .reshape(&[b, t, c * f]);
         let conv_out = self.conv_out.forward(&reshaped);
 
         // Add positional embedding
@@ -144,20 +144,33 @@ impl AudioEncoder {
             all_valid.push(chunk_tokens);
         }
 
-        // Concatenate: (total_tokens, d_model)
-        let hidden = Tensor::cat(&all_valid, 0);
-        let total_tokens = hidden.size()[0];
+        // The reference block-diagonal mask makes windows independent. Run the
+        // same windows as separate sequences instead, keeping the largest
+        // attention score tensor bounded by one inference window rather than
+        // allocating a total_tokens x total_tokens mask and score tensor.
+        let flattened = Tensor::cat(&all_valid, 0);
+        let chunk_size = self.config.n_window * 2;
+        let chunks_per_window = self.config.n_window_infer / chunk_size;
+        let window_ranges = token_window_ranges(&chunk_valid_tokens, chunks_per_window);
+        let mut encoded_windows = Vec::with_capacity(window_ranges.len());
 
-        // Add batch dim for transformer: (1, total_tokens, d_model)
-        let mut hidden = hidden.unsqueeze(0);
+        for range in window_ranges {
+            let mut window = flattened
+                .narrow(0, range.start as i64, range.len() as i64)
+                .unsqueeze(0);
 
-        // Build windowed attention mask
-        let mask = self.build_window_mask(total_tokens, &chunk_valid_tokens, device);
+            for layer in &self.layers {
+                window = layer.forward(&window, None);
+            }
 
-        // Transformer encoder layers with windowed attention
-        for layer in &self.layers {
-            hidden = layer.forward(&hidden, mask.as_ref());
+            // MLX is lazy. Materializing at the natural window boundary keeps
+            // graphs and intermediate attention activations window-bounded.
+            window.eval();
+            encoded_windows.push(window.squeeze_dim(0));
         }
+
+        // Add the batch dimension back for the token-wise output projection.
+        let hidden = Tensor::cat(&encoded_windows, 0).unsqueeze(0);
 
         // Output projection: LN -> Linear -> GELU -> Linear
         let hidden = self.ln_post.forward(&hidden);
@@ -166,97 +179,6 @@ impl AudioEncoder {
 
         // Remove batch dim: (num_tokens, output_dim)
         hidden.squeeze_dim(0)
-    }
-
-    /// Build a block-diagonal windowed attention mask.
-    fn build_window_mask(
-        &self,
-        total_tokens: i64,
-        chunk_token_counts: &[usize],
-        device: Device,
-    ) -> Option<Tensor> {
-        let chunk_size = self.config.n_window * 2;
-        let chunks_per_window = self.config.n_window_infer / chunk_size;
-
-        if chunks_per_window == 0 || chunk_token_counts.len() <= chunks_per_window {
-            return None;
-        }
-
-        let num_windows = (chunk_token_counts.len() + chunks_per_window - 1) / chunks_per_window;
-
-        // Build mask using where_cond: start with -inf, then zero out allowed blocks
-        // Create a boolean mask indicating allowed positions
-        let mut allow_data = vec![false; (total_tokens * total_tokens) as usize];
-
-        let mut token_offset: i64 = 0;
-        for w in 0..num_windows {
-            let chunk_start = w * chunks_per_window;
-            let chunk_end = std::cmp::min(chunk_start + chunks_per_window, chunk_token_counts.len());
-
-            let window_tokens: i64 = chunk_token_counts[chunk_start..chunk_end]
-                .iter()
-                .map(|&c| c as i64)
-                .sum();
-
-            // Mark this window block as allowed
-            for r in token_offset..token_offset + window_tokens {
-                for c in token_offset..token_offset + window_tokens {
-                    allow_data[(r * total_tokens + c) as usize] = true;
-                }
-            }
-
-            token_offset += window_tokens;
-        }
-
-        // Build the mask tensor
-        let neg_inf = Tensor::full(
-            &[1, 1, total_tokens, total_tokens],
-            f64::NEG_INFINITY,
-            DType::Float32,
-            device,
-        );
-        let zero = Tensor::zeros(
-            &[1, 1, total_tokens, total_tokens],
-            DType::Float32,
-            device,
-        );
-
-        // Create bool mask from data
-        // For tch backend: use from_slice + reshape
-        // For mlx backend: same approach
-        #[cfg(feature = "tch-backend")]
-        {
-            let allow_mask = Tensor::from_tch(
-                tch::Tensor::from_slice(
-                    &allow_data.iter().map(|&b| if b { 1i64 } else { 0i64 }).collect::<Vec<_>>()
-                )
-                .reshape([1, 1, total_tokens, total_tokens])
-                .to_kind(tch::Kind::Bool)
-                .to_device(tch::Device::from(device)),
-            );
-            // where(allow, 0, -inf)
-            let mask = Tensor::from_tch(
-                zero.into_tch().where_self(&allow_mask.as_tch(), &neg_inf.into_tch())
-            );
-            Some(mask)
-        }
-
-        #[cfg(feature = "mlx")]
-        {
-            let allow_i32: Vec<i32> = allow_data.iter().map(|&b| if b { 1 } else { 0 }).collect();
-            let allow_arr = crate::backend::mlx::array::MlxArray::from_i32(
-                &allow_i32,
-                &[1, 1, total_tokens as i32, total_tokens as i32],
-            );
-            // Cast to bool for where_cond
-            let allow_bool = allow_arr.astype(crate::backend::mlx::ffi::mlx_dtype::MLX_BOOL);
-            let mask = Tensor::from_mlx(crate::backend::mlx::ops::where_cond(
-                &allow_bool,
-                &zero.inner,
-                &neg_inf.inner,
-            ));
-            Some(mask)
-        }
     }
 
     /// Compute output token count for a given number of input frames through 3x Conv2d.
@@ -276,6 +198,53 @@ impl AudioEncoder {
             total += Self::feat_extract_output_length(tail_frames);
         }
         total
+    }
+}
+
+/// Convert chunk boundaries into contiguous token ranges for independent
+/// encoder windows. A zero window size preserves the previous global-attention
+/// fallback used for invalid/smaller-than-one-window configurations.
+fn token_window_ranges(
+    chunk_token_counts: &[usize],
+    chunks_per_window: usize,
+) -> Vec<Range<usize>> {
+    if chunk_token_counts.is_empty() {
+        return Vec::new();
+    }
+
+    let chunks_per_window = if chunks_per_window == 0 {
+        chunk_token_counts.len()
+    } else {
+        chunks_per_window
+    };
+    let mut token_offset = 0;
+
+    chunk_token_counts
+        .chunks(chunks_per_window)
+        .map(|chunk_counts| {
+            let start = token_offset;
+            token_offset += chunk_counts.iter().sum::<usize>();
+            start..token_offset
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::token_window_ranges;
+
+    #[test]
+    fn token_windows_follow_chunk_groups_and_keep_tail() {
+        assert_eq!(
+            token_window_ranges(&[13, 13, 13, 7, 4], 2),
+            vec![0..26, 26..46, 46..50]
+        );
+    }
+
+    #[test]
+    fn zero_chunks_per_window_preserves_global_attention_fallback() {
+        assert_eq!(token_window_ranges(&[13, 7, 4], 0), vec![0..24]);
+        assert!(token_window_ranges(&[], 8).is_empty());
     }
 }
 

@@ -7,6 +7,10 @@ use crate::config::TextDecoderConfig;
 use crate::layers::{LayerKvCache, RmsNorm, TextDecoderLayer};
 use crate::weights::get_weight;
 
+/// Bound prompt activations and attention masks while staying aligned with the
+/// cache allocator's 256-token growth step.
+pub const PREFILL_BLOCK_SIZE: usize = 512;
+
 /// KV cache for autoregressive generation.
 pub struct KvCache {
     layers: Vec<LayerKvCache>,
@@ -57,10 +61,7 @@ impl TextDecoder {
 
         let norm = RmsNorm::load(weights, &format!("{}.norm", prefix), config.rms_norm_eps)?;
 
-        let lm_head_key = format!(
-            "{}",
-            prefix.replace(".model", ".lm_head")
-        );
+        let lm_head_key = format!("{}", prefix.replace(".model", ".lm_head"));
         let lm_head_weight = if config.tie_word_embeddings {
             embed_tokens.shallow_clone()
         } else {
@@ -108,7 +109,65 @@ impl TextDecoder {
             .matmul(&self.lm_head_weight_t)
     }
 
+    /// Prefill a long prompt in fixed-size blocks while reusing the KV cache.
+    ///
+    /// Each block attends to all cached prefix tokens and causally to its own
+    /// tokens. This is mathematically equivalent to one full causal prefill,
+    /// but bounds query activations to `block_size` and avoids a full square
+    /// causal mask.
+    pub fn prefill_last_token(
+        &self,
+        hidden_states: &Tensor,
+        cos: &Tensor,
+        sin: &Tensor,
+        kv_cache: &mut KvCache,
+        block_size: usize,
+    ) -> Tensor {
+        assert!(block_size > 0, "prefill block size must be positive");
+        let seq_len = hidden_states.size()[1];
+        assert!(seq_len > 0, "prefill requires at least one token");
+        assert_eq!(cos.size()[0], seq_len, "cos positions must match prompt");
+        assert_eq!(sin.size()[0], seq_len, "sin positions must match prompt");
+
+        let mut block_start = 0;
+        loop {
+            let block_len = std::cmp::min(block_size as i64, seq_len - block_start);
+            let block_end = block_start + block_len;
+            let block_hidden = hidden_states.narrow(1, block_start, block_len);
+            let block_cos = cos.narrow(0, block_start, block_len);
+            let block_sin = sin.narrow(0, block_start, block_len);
+            let past_len = kv_cache.seq_len();
+            let mask = create_causal_mask(block_len, past_len, hidden_states.device());
+            let hidden =
+                self.forward_layers(&block_hidden, &block_cos, &block_sin, kv_cache, Some(&mask));
+
+            if block_end == seq_len {
+                let hidden = self.norm.forward(&hidden);
+                return hidden
+                    .narrow(1, block_len - 1, 1)
+                    .matmul(&self.lm_head_weight_t);
+            }
+
+            // MLX records operations lazily. Evaluate once per prefill block so
+            // cache updates do not retain the entire prompt activation graph.
+            hidden.eval();
+            block_start = block_end;
+        }
+    }
+
     fn forward_hidden(
+        &self,
+        hidden_states: &Tensor,
+        cos: &Tensor,
+        sin: &Tensor,
+        kv_cache: &mut KvCache,
+        mask: Option<&Tensor>,
+    ) -> Tensor {
+        let hidden = self.forward_layers(hidden_states, cos, sin, kv_cache, mask);
+        self.norm.forward(&hidden)
+    }
+
+    fn forward_layers(
         &self,
         hidden_states: &Tensor,
         cos: &Tensor,
@@ -122,7 +181,7 @@ impl TextDecoder {
             hidden = layer.forward(&hidden, cos, sin, layer_cache, mask);
         }
 
-        self.norm.forward(&hidden)
+        hidden
     }
 
     pub fn config(&self) -> &TextDecoderConfig {
@@ -141,4 +200,29 @@ pub fn create_causal_mask(seq_len: i64, past_len: i64, device: Device) -> Tensor
     );
     let mask = mask.triu(past_len + 1);
     mask.unsqueeze(0).unsqueeze(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "tch-backend")]
+    #[test]
+    fn chunked_causal_mask_exposes_prefix_and_prior_block_positions() {
+        let mask = create_causal_mask(3, 2, Device::Cpu);
+        assert_eq!(mask.size(), vec![1, 1, 3, 5]);
+
+        let values = mask.to_vec_f32();
+        assert_eq!(&values[0..3], &[0.0, 0.0, 0.0]);
+        assert!(values[3].is_infinite() && values[3].is_sign_negative());
+        assert!(values[4].is_infinite() && values[4].is_sign_negative());
+        assert_eq!(&values[5..9], &[0.0, 0.0, 0.0, 0.0]);
+        assert!(values[9].is_infinite() && values[9].is_sign_negative());
+        assert_eq!(&values[10..15], &[0.0, 0.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn prefill_block_size_is_cache_allocator_aligned() {
+        assert_eq!(PREFILL_BLOCK_SIZE % 256, 0);
+    }
 }
