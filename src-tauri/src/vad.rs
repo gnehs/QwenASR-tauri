@@ -33,14 +33,14 @@ const MAX_ONNX_INFERENCE_WORKERS: usize = 4;
 const SPEECH_THRESHOLD: f32 = 0.4;
 const SMOOTH_WINDOW_SIZE: usize = 5;
 const MIN_SPEECH_FRAMES: usize = 20;
-const MAX_SPEECH_FRAMES: usize = 3_000;
+const MAX_SPEECH_FRAMES: usize = 2_000;
 const MIN_SILENCE_FRAMES: usize = 20;
 const MERGE_SILENCE_FRAMES: usize = 0;
 const EXTEND_SPEECH_FRAMES: usize = 0;
 
-const BOUNDARY_PAD_MS: u64 = 240;
-const SPLIT_AFTER_SILENCE_MS: u64 = 5_000;
-const MAX_CHUNK_MS: u64 = 180_000;
+const BOUNDARY_PAD_MS: u64 = 100;
+const SPLIT_AFTER_SILENCE_MS: u64 = 800;
+const MAX_CHUNK_MS: u64 = 240_000;
 const MIN_CHUNK_MS: u64 = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -853,7 +853,7 @@ fn merge_overlapping_ranges(mut ranges: Vec<AudioRange>) -> Vec<AudioRange> {
 fn pack_chunks(segments: &[AudioRange], total_samples: usize) -> Vec<AudioRange> {
     let max_chunk_samples = ms_to_samples(MAX_CHUNK_MS);
     // Each detected speech range already includes boundary padding. Subtract both
-    // pads so five seconds represents silence in the source audio.
+    // pads so the configured threshold represents silence in the source audio.
     let max_gap_ms = SPLIT_AFTER_SILENCE_MS.saturating_sub(BOUNDARY_PAD_MS.saturating_mul(2));
     let max_gap_samples = ms_to_samples(max_gap_ms);
     let mut chunks = Vec::new();
@@ -918,12 +918,15 @@ fn compact_tiny_tail_chunks(mut chunks: Vec<AudioRange>) -> Vec<AudioRange> {
         return chunks;
     }
 
-    let tail = chunks.pop().expect("tail should exist");
+    let mut tail = chunks.pop().expect("tail should exist");
     if let Some(previous) = chunks.last_mut() {
-        previous.end_sample = tail.end_sample;
-    } else {
-        chunks.push(tail);
+        let missing = min_chunk_samples.saturating_sub(tail.duration_samples());
+        if previous.end_sample == tail.start_sample && previous.duration_samples() > missing {
+            previous.end_sample -= missing;
+            tail.start_sample -= missing;
+        }
     }
+    chunks.push(tail);
     chunks
 }
 
@@ -973,29 +976,23 @@ mod tests {
     }
 
     #[test]
-    fn chunk_packing_splits_only_after_five_seconds_of_source_silence() {
+    fn chunk_packing_splits_after_a_natural_pause() {
         let total_samples = ms_to_samples(10_000);
         let first = pad_range(
             AudioRange::new(ms_to_samples(1_000), ms_to_samples(2_000)),
             total_samples,
         );
-        let at_five_seconds = pad_range(
-            AudioRange::new(ms_to_samples(7_000), ms_to_samples(8_000)),
+        let short_pause = pad_range(
+            AudioRange::new(ms_to_samples(2_790), ms_to_samples(3_790)),
             total_samples,
         );
-        let over_five_seconds = pad_range(
-            AudioRange::new(ms_to_samples(7_010), ms_to_samples(8_010)),
+        let natural_pause = pad_range(
+            AudioRange::new(ms_to_samples(2_810), ms_to_samples(3_810)),
             total_samples,
         );
 
-        assert_eq!(
-            pack_chunks(&[first, at_five_seconds], total_samples).len(),
-            1
-        );
-        assert_eq!(
-            pack_chunks(&[first, over_five_seconds], total_samples).len(),
-            2
-        );
+        assert_eq!(pack_chunks(&[first, short_pause], total_samples).len(), 1);
+        assert_eq!(pack_chunks(&[first, natural_pause], total_samples).len(), 2);
     }
 
     #[test]
@@ -1013,13 +1010,13 @@ mod tests {
     }
 
     #[test]
-    fn splits_continuous_audio_into_bounded_chunks() {
-        let chunks = split_long_range(AudioRange::new(0, ms_to_samples(65_000)));
+    fn caps_continuous_speech_at_four_minutes() {
+        let chunks = split_long_range(AudioRange::new(0, ms_to_samples(10 * 60_000)));
 
-        assert!(chunks.len() >= 3);
+        assert_eq!(chunks.len(), 3);
         assert!(chunks
             .iter()
-            .all(|chunk| chunk.duration_ms() <= MAX_CHUNK_MS + MIN_CHUNK_MS));
+            .all(|chunk| chunk.duration_ms() <= MAX_CHUNK_MS));
     }
 
     #[test]

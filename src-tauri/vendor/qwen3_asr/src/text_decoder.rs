@@ -88,14 +88,41 @@ impl TextDecoder {
         kv_cache: &mut KvCache,
         mask: Option<&Tensor>,
     ) -> Tensor {
+        self.forward_hidden(hidden_states, cos, sin, kv_cache, mask)
+            .matmul(&self.lm_head_weight_t)
+    }
+
+    /// Run a prefill while projecting only its final position to vocabulary logits.
+    pub fn forward_last_token(
+        &self,
+        hidden_states: &Tensor,
+        cos: &Tensor,
+        sin: &Tensor,
+        kv_cache: &mut KvCache,
+        mask: Option<&Tensor>,
+    ) -> Tensor {
+        let hidden = self.forward_hidden(hidden_states, cos, sin, kv_cache, mask);
+        let last_position = hidden.size()[1] - 1;
+        hidden
+            .narrow(1, last_position, 1)
+            .matmul(&self.lm_head_weight_t)
+    }
+
+    fn forward_hidden(
+        &self,
+        hidden_states: &Tensor,
+        cos: &Tensor,
+        sin: &Tensor,
+        kv_cache: &mut KvCache,
+        mask: Option<&Tensor>,
+    ) -> Tensor {
         let mut hidden = hidden_states.shallow_clone();
 
         for (layer, layer_cache) in self.layers.iter().zip(kv_cache.layers.iter_mut()) {
             hidden = layer.forward(&hidden, cos, sin, layer_cache, mask);
         }
 
-        let hidden = self.norm.forward(&hidden);
-        hidden.matmul(&self.lm_head_weight_t)
+        self.norm.forward(&hidden)
     }
 
     pub fn config(&self) -> &TextDecoderConfig {

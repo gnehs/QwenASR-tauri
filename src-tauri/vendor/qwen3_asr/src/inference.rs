@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::ops::Range;
 use std::path::Path;
 use std::time::Instant;
 use crate::tensor::{Device, Tensor};
@@ -202,19 +203,18 @@ impl AsrInference {
         // Step 5: Build embeddings with audio injection
         let input_tensor =
             Tensor::from_slice_i64(&input_ids).to_device(self.device);
-        let mut hidden_states = self.text_decoder.embed(&input_tensor).unsqueeze(0);
+        let token_embeds = self.text_decoder.embed(&input_tensor).unsqueeze(0);
 
-        // Replace audio_pad positions with audio encoder embeddings
-        for (embed_idx, &seq_pos) in audio_positions.iter().enumerate() {
-            let audio_embed = audio_embeds.get(embed_idx as i64);
-            hidden_states = hidden_states.slice_scatter(
-                &audio_embed.unsqueeze(0).unsqueeze(0),
-                1,
-                seq_pos as i64,
-                seq_pos as i64 + 1,
-                1,
-            );
-        }
+        // Audio placeholders are contiguous. Replace the whole range at once so
+        // MLX does not build one full-sequence slice-update node per audio token.
+        let prefix = token_embeds.narrow(1, 0, audio_positions.start as i64);
+        let audio = audio_embeds.unsqueeze(0);
+        let suffix = token_embeds.narrow(
+            1,
+            audio_positions.end as i64,
+            (seq_len - audio_positions.end) as i64,
+        );
+        let hidden_states = Tensor::cat(&[prefix, audio, suffix], 1);
         timings.prompt_ms = prompt_started.elapsed().as_millis();
 
         // Step 6: Precompute MRoPE cos/sin for all positions (prefill + max decode)
@@ -245,7 +245,7 @@ impl AsrInference {
         let mask = create_causal_mask(seq_len as i64, 0, self.device);
         let mut kv_cache = KvCache::new(text_config.num_hidden_layers);
 
-        let logits = self.text_decoder.forward(
+        let logits = self.text_decoder.forward_last_token(
             &hidden_states,
             &cos,
             &sin,
@@ -262,7 +262,7 @@ impl AsrInference {
         let eos_token_ids = [ENDOFTEXT_TOKEN_ID, IM_END_TOKEN_ID];
         let mut streaming_status = StreamingStatus::Completed;
 
-        let mut next_logits = logits.narrow(1, seq_len as i64 - 1, 1).squeeze_dim(1);
+        let mut next_logits = logits.squeeze_dim(1);
 
         let mut current_pos = seq_len;
         // Derive the loop bound from the actual table capacity so future
@@ -339,7 +339,7 @@ impl AsrInference {
         num_audio_tokens: usize,
         context: &str,
         language: Option<&str>,
-    ) -> Result<(Vec<i64>, Vec<usize>)> {
+    ) -> Result<(Vec<i64>, Range<usize>)> {
         let mut tokens: Vec<i64> = vec![
             151644, // <|im_start|>
             8948,   // system
@@ -359,8 +359,7 @@ impl AsrInference {
         for _ in 0..num_audio_tokens {
             tokens.push(AUDIO_PAD_TOKEN_ID);
         }
-        let audio_positions: Vec<usize> =
-            (audio_start_pos..audio_start_pos + num_audio_tokens).collect();
+        let audio_positions = audio_start_pos..audio_start_pos + num_audio_tokens;
 
         tokens.extend_from_slice(&[
             151670, // <|audio_end|>

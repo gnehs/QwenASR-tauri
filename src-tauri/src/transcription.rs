@@ -1279,33 +1279,34 @@ fn finalize_transcription_with_context(
                     Some(pending.timings.clone()),
                 );
                 let chunk_samples_f32 = normalized_i16_to_f32(&chunk.samples);
-                let aligned_units = aligner
-                    .align_samples(&chunk_samples_f32, &chunk.raw_text, language)
-                    .map_err(|error| {
-                        AppError::Transcription(format!(
-                            "Qwen3 ForcedAligner failed on chunk {}/{}: {error}",
-                            chunk.chunk_index, pending.total_chunks
-                        ))
-                    })?;
-                check_cancelled(cancel)?;
-                let aligned_segments = build_aligned_segments_with_offset(
-                    &chunk.raw_text,
-                    &aligned_units,
-                    language,
-                    output_language.as_deref(),
-                    chunk.range.start_ms(),
-                    chunk.range.duration_ms(),
-                    pending.options.segment_by_punctuation,
+                let aligned_units = forced_alignment_or_fallback(
+                    aligner.align_samples(&chunk_samples_f32, &chunk.raw_text, language),
+                    chunk.chunk_index,
+                    pending.total_chunks,
                 )?;
-                if pending.options.write_json && aligned_segments.is_some() {
-                    words.extend(aligned_words_with_offset(
+                if let Some(aligned_units) = aligned_units {
+                    check_cancelled(cancel)?;
+                    let aligned_segments = build_aligned_segments_with_offset(
+                        &chunk.raw_text,
                         &aligned_units,
+                        language,
                         output_language.as_deref(),
                         chunk.range.start_ms(),
                         chunk.range.duration_ms(),
-                    )?);
+                        pending.options.segment_by_punctuation,
+                    )?;
+                    if pending.options.write_json && aligned_segments.is_some() {
+                        words.extend(aligned_words_with_offset(
+                            &aligned_units,
+                            output_language.as_deref(),
+                            chunk.range.start_ms(),
+                            chunk.range.duration_ms(),
+                        )?);
+                    }
+                    aligned_segments
+                } else {
+                    None
                 }
-                aligned_segments
             } else {
                 None
             };
@@ -1496,6 +1497,20 @@ fn add_inference_timings(target: &mut TranscriptionTimings, source: &InferenceTi
     target.asr_generated_tokens = target
         .asr_generated_tokens
         .saturating_add(source.generated_tokens);
+}
+
+fn forced_alignment_or_fallback(
+    result: AppResult<Vec<AlignedUnit>>,
+    chunk_index: usize,
+    total_chunks: usize,
+) -> AppResult<Option<Vec<AlignedUnit>>> {
+    match result {
+        Ok(units) => Ok(Some(units)),
+        Err(AppError::ForcedAlignmentTooLong { .. }) => Ok(None),
+        Err(error) => Err(AppError::Transcription(format!(
+            "Qwen3 ForcedAligner failed on chunk {chunk_index}/{total_chunks}: {error}"
+        ))),
+    }
 }
 
 fn normalized_i16_to_f32(samples: &[i16]) -> Vec<f32> {
@@ -2209,6 +2224,34 @@ mod tests {
         let text = "第一句，第二句。Third sentence!";
 
         assert_eq!(transcript_units(text, false), vec![text]);
+    }
+
+    #[test]
+    fn falls_back_when_forced_alignment_exceeds_model_context() {
+        let result = forced_alignment_or_fallback(
+            Err(AppError::ForcedAlignmentTooLong {
+                tokens: 9_209,
+                max_tokens: 8_192,
+            }),
+            1,
+            1,
+        )
+        .unwrap();
+
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn preserves_other_forced_alignment_errors() {
+        let error = forced_alignment_or_fallback(
+            Err(AppError::Transcription("inference failed".into())),
+            2,
+            3,
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("chunk 2/3"));
+        assert!(error.to_string().contains("inference failed"));
     }
 
     #[test]

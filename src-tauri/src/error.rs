@@ -16,6 +16,8 @@ pub enum AppError {
     Download(String),
     #[error("Transcription error: {0}")]
     Transcription(String),
+    #[error("Forced alignment input is too long ({tokens} tokens; maximum {max_tokens}).")]
+    ForcedAlignmentTooLong { tokens: usize, max_tokens: usize },
     #[error("{0}")]
     Cancelled(String),
 }

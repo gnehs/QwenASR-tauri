@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::{ops::Range, path::Path};
 
 use qwen3_asr::audio;
 use qwen3_asr::audio_encoder::AudioEncoder;
@@ -146,23 +146,22 @@ impl ForcedAlignerInference {
         let (input_ids, audio_positions) = self.build_prompt(&units, num_audio_tokens)?;
         let seq_len = input_ids.len();
         if seq_len > MAX_POSITION_EMBEDDINGS {
-            return Err(AppError::Transcription(format!(
-                "Forced alignment input is too long ({seq_len} tokens; maximum {MAX_POSITION_EMBEDDINGS})."
-            )));
+            return Err(AppError::ForcedAlignmentTooLong {
+                tokens: seq_len,
+                max_tokens: MAX_POSITION_EMBEDDINGS,
+            });
         }
 
         let input_tensor = Tensor::from_slice_i64(&input_ids).to_device(self.device);
-        let mut hidden_states = self.text_decoder.embed(&input_tensor).unsqueeze(0);
-        for (embed_index, &sequence_position) in audio_positions.iter().enumerate() {
-            let audio_embed = audio_embeds.get(embed_index as i64);
-            hidden_states = hidden_states.slice_scatter(
-                &audio_embed.unsqueeze(0).unsqueeze(0),
-                1,
-                sequence_position as i64,
-                sequence_position as i64 + 1,
-                1,
-            );
-        }
+        let token_embeds = self.text_decoder.embed(&input_tensor).unsqueeze(0);
+        let prefix = token_embeds.narrow(1, 0, audio_positions.start as i64);
+        let audio = audio_embeds.unsqueeze(0);
+        let suffix = token_embeds.narrow(
+            1,
+            audio_positions.end as i64,
+            (seq_len - audio_positions.end) as i64,
+        );
+        let hidden_states = Tensor::cat(&[prefix, audio, suffix], 1);
 
         let positions = (0..seq_len as i64).collect::<Vec<_>>();
         let position_ids = [positions.clone(), positions.clone(), positions];
@@ -206,12 +205,12 @@ impl ForcedAlignerInference {
         &self,
         units: &[String],
         num_audio_tokens: usize,
-    ) -> AppResult<(Vec<i64>, Vec<usize>)> {
+    ) -> AppResult<(Vec<i64>, Range<usize>)> {
         let mut tokens = Vec::with_capacity(num_audio_tokens + units.len() * 4 + 2);
         tokens.push(AUDIO_START_TOKEN_ID);
         let audio_start = tokens.len();
         tokens.extend(std::iter::repeat_n(AUDIO_PAD_TOKEN_ID, num_audio_tokens));
-        let audio_positions = (audio_start..audio_start + num_audio_tokens).collect::<Vec<_>>();
+        let audio_positions = audio_start..audio_start + num_audio_tokens;
         tokens.push(AUDIO_END_TOKEN_ID);
 
         for unit in units {
