@@ -38,7 +38,7 @@ function App() {
         <section className="flex h-screen min-h-0 flex-col overflow-hidden bg-background">
           {workspace.isDraggingFiles ? (
             <div
-              className="pointer-events-none fixed inset-3 z-50 grid place-items-center rounded-xl border-2 border-dashed border-primary/40 bg-primary/10 ring-1 ring-primary/20"
+              className="pointer-events-none fixed inset-3 z-50 grid place-items-center rounded-xl border-2 border-dashed border-primary/40 bg-background ring-1 ring-primary/20"
               role="status"
               aria-live="polite"
             >
