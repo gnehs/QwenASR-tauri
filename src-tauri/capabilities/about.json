@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "about",
+  "description": "Capability for the About window",
+  "windows": ["about"],
+  "permissions": [
+    "core:event:allow-listen",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://github.com/gnehs/QwenASR-tauri" },
+        { "url": "https://www.buymeacoffee.com/gnehs" }
+      ]
+    }
+  ]
+}

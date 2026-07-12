@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import {
   FileUpIcon,
   ListPlusIcon,
@@ -5,6 +6,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { Trans } from "@lingui/react/macro";
+import { listen } from "@tauri-apps/api/event";
 import { Toaster } from "sonner";
 
 import { AppToolbar } from "@/components/app/AppToolbar";
@@ -22,8 +24,43 @@ import { SettingsPanel } from "@/components/transcription/SettingsPanel";
 import { TaskManagerPanel } from "@/components/transcription/TaskManagerPanel";
 import { useTranscriptionWorkspace } from "@/hooks/use-transcription-workspace";
 
+type NativeMenuAction = "settings" | "new-task";
+
 function App() {
   const workspace = useTranscriptionWorkspace();
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const pickFilesForTasksRef = useRef(workspace.pickFilesForTasks);
+  pickFilesForTasksRef.current = workspace.pickFilesForTasks;
+
+  useEffect(() => {
+    let isUnmounted = false;
+    let unlisten: (() => void) | undefined;
+
+    void listen<NativeMenuAction>("native-menu-action", ({ payload }) => {
+      if (payload === "settings") {
+        setIsSettingsOpen(true);
+      } else if (payload === "new-task") {
+        setIsSettingsOpen(false);
+        void pickFilesForTasksRef.current();
+      }
+    })
+      .then((stopListening) => {
+        if (isUnmounted) {
+          stopListening();
+        } else {
+          unlisten = stopListening;
+        }
+      })
+      .catch(() => {
+        // Ignore failures when running outside the Tauri runtime.
+      });
+
+    return () => {
+      isUnmounted = true;
+      unlisten?.();
+    };
+  }, []);
+
   const hasFinishedTasks = workspace.tasks.some(
     (task) =>
       task.status === "completed" ||
@@ -79,7 +116,7 @@ function App() {
               ) : undefined
             }
             utilities={
-              <Sheet>
+              <Sheet open={isSettingsOpen} onOpenChange={setIsSettingsOpen}>
                 <SheetTrigger render={<Button variant="outline" size="sm" />}>
                   <Settings2Icon data-icon="inline-start" />
                   <Trans>設定</Trans>
