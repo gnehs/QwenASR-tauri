@@ -52,7 +52,10 @@ const ALIGN_PHASE_START: f64 = TRANSCRIBE_PHASE_END_WITH_ALIGNMENT;
 const ALIGN_PHASE_END: f64 = 1.0;
 const ASR_CHUNK_OVERHEAD_MS: u64 = 500;
 const STREAM_UPDATE_INTERVAL_MS: u128 = 75;
+#[cfg(target_os = "macos")]
+const MLX_CACHE_LIMIT_BYTES: usize = 1024 * 1024 * 1024;
 static S2TW_CONVERTER: OnceLock<Mutex<Option<OpenCC>>> = OnceLock::new();
+static INFERENCE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 const ASR_LANGUAGES: &[&str] = &[
     "Chinese",
     "English",
@@ -191,6 +194,10 @@ pub fn transcribe_file(
     request: TranscribeFileRequest,
     cancel: CancellationToken,
 ) -> AppResult<TranscriptionResult> {
+    let _inference_guard = INFERENCE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let started = Instant::now();
     let audio_path = request.audio_path.clone();
 
@@ -273,6 +280,7 @@ fn transcribe_file_inner(
     );
 
     let device = default_device();
+    let mut memory_guard = MlxTaskMemoryGuard::new();
     let engine = load_engine(&model_path, device)?;
     check_cancelled(cancel)?;
     let asr_range_end = if use_forced_aligner {
@@ -315,6 +323,7 @@ fn transcribe_file_inner(
         ALIGN_PHASE_END,
     );
     drop(engine);
+    release_mlx_cache("ASR model unloaded");
     check_cancelled(cancel)?;
     let aligner = load_aligner_after_transcription(
         app,
@@ -333,6 +342,8 @@ fn transcribe_file_inner(
     check_cancelled(cancel)?;
     let mut result =
         finalize_transcription_with_context(app, started, aligner.as_ref(), pending, cancel)?;
+    drop(aligner);
+    memory_guard.clear_now("ForcedAligner unloaded after transcription");
     result.duration_ms = started.elapsed().as_millis();
     result.timings.total_ms = result.duration_ms;
     if let Some(json_path) = result.json_path.as_deref() {
@@ -372,6 +383,10 @@ pub fn transcribe_batch(
     app: AppHandle,
     request: TranscribeBatchRequest,
 ) -> AppResult<Vec<TranscriptionResult>> {
+    let _inference_guard = INFERENCE_LOCK
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let started = Instant::now();
     let cancel = Arc::new(AtomicBool::new(false));
     if request.audio_paths.is_empty() {
@@ -425,6 +440,7 @@ pub fn transcribe_batch(
     );
 
     let device = default_device();
+    let mut memory_guard = MlxTaskMemoryGuard::new();
     let engine = load_engine(&model_path, device)?;
     let total = request.audio_paths.len();
     let mut pending_results = Vec::with_capacity(total);
@@ -511,6 +527,7 @@ pub fn transcribe_batch(
     }
 
     drop(engine);
+    release_mlx_cache("ASR model unloaded before batch alignment");
     let aligner = load_aligner_after_transcription(
         &app,
         started,
@@ -557,6 +574,8 @@ pub fn transcribe_batch(
         };
         results.push(result);
     }
+    drop(aligner);
+    memory_guard.clear_now("ForcedAligner unloaded after batch transcription");
 
     emit_progress(
         &app,
@@ -835,6 +854,7 @@ fn default_device() -> Device {
     #[cfg(target_os = "macos")]
     {
         qwen3_asr::backend::mlx::stream::init_mlx(true);
+        configure_mlx_memory();
         Device::Gpu(0)
     }
 
@@ -847,6 +867,71 @@ fn default_device() -> Device {
         }
     }
 }
+
+struct MlxTaskMemoryGuard {
+    cleaned: bool,
+}
+
+impl MlxTaskMemoryGuard {
+    fn new() -> Self {
+        Self { cleaned: false }
+    }
+
+    fn clear_now(&mut self, stage: &str) {
+        release_mlx_cache(stage);
+        self.cleaned = true;
+    }
+}
+
+impl Drop for MlxTaskMemoryGuard {
+    fn drop(&mut self) {
+        if !self.cleaned {
+            release_mlx_cache("transcription stopped before completion");
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn configure_mlx_memory() {
+    static CONFIGURED: OnceLock<()> = OnceLock::new();
+    CONFIGURED.get_or_init(|| {
+        if let Err(status) = qwen3_asr::backend::mlx::memory::set_cache_limit(MLX_CACHE_LIMIT_BYTES)
+        {
+            eprintln!("MLX failed to set the cache limit (status {status})");
+        }
+    });
+}
+
+#[cfg(not(target_os = "macos"))]
+fn configure_mlx_memory() {}
+
+#[cfg(target_os = "macos")]
+fn release_mlx_cache(stage: &str) {
+    use qwen3_asr::backend::mlx::{memory, stream};
+
+    stream::synchronize();
+    let before = memory::stats().ok();
+    if let Err(status) = memory::clear_cache() {
+        eprintln!("MLX failed to clear the memory cache after {stage} (status {status})");
+        return;
+    }
+    let after = memory::stats().ok();
+
+    if let (Some(before), Some(after)) = (before, after) {
+        const MIB: f64 = 1024.0 * 1024.0;
+        eprintln!(
+            "MLX memory after {stage}: active {:.1} MiB, cache {:.1} -> {:.1} MiB, peak {:.1} MiB",
+            after.active as f64 / MIB,
+            before.cache as f64 / MIB,
+            after.cache as f64 / MIB,
+            after.peak as f64 / MIB,
+        );
+    }
+    let _ = memory::reset_peak();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn release_mlx_cache(_stage: &str) {}
 
 #[allow(clippy::too_many_arguments)]
 fn transcribe_with_context(
@@ -1279,8 +1364,11 @@ fn finalize_transcription_with_context(
                     Some(pending.timings.clone()),
                 );
                 let chunk_samples_f32 = normalized_i16_to_f32(&chunk.samples);
+                let alignment_result =
+                    aligner.align_samples(&chunk_samples_f32, &chunk.raw_text, language);
+                release_mlx_cache("ForcedAligner chunk completed");
                 let aligned_units = forced_alignment_or_fallback(
-                    aligner.align_samples(&chunk_samples_f32, &chunk.raw_text, language),
+                    alignment_result,
                     chunk.chunk_index,
                     pending.total_chunks,
                 )?;

@@ -123,6 +123,17 @@ extern "C" {
     pub fn mlx_synchronize(stream: mlx_stream) -> c_int;
 
     // -----------------------------------------------------------------------
+    // Memory management
+    // -----------------------------------------------------------------------
+
+    pub fn mlx_clear_cache() -> c_int;
+    pub fn mlx_get_active_memory(res: *mut usize) -> c_int;
+    pub fn mlx_get_cache_memory(res: *mut usize) -> c_int;
+    pub fn mlx_get_peak_memory(res: *mut usize) -> c_int;
+    pub fn mlx_reset_peak_memory() -> c_int;
+    pub fn mlx_set_cache_limit(previous: *mut usize, limit: usize) -> c_int;
+
+    // -----------------------------------------------------------------------
     // Core ops
     // -----------------------------------------------------------------------
 
