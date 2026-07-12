@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardAction,
-  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -55,12 +54,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format";
 import { SettingsSection } from "@/components/transcription/SettingsSection";
 import type { DownloadProgress, ModelStatus } from "@/types/transcription";
-
-const modelComparisonMessages = {
-  "qwen3-asr-0.6b": msg`速度：快 · 品質：標準`,
-  "qwen3-asr-1.7b": msg`速度：較慢 · 品質：高`,
-  "qwen3-forced-aligner-0.6b": msg`用途：產生精準字幕時間`,
-};
 
 const modelDescriptionMessages = {
   "qwen3-asr-0.6b": msg`快速、適合大多數單次與批次轉錄工作。`,
@@ -133,10 +126,6 @@ export function ModelPanel({
       ) : (
         <div className="flex flex-col gap-3">
           {models.map((model) => {
-            const comparisonMessage =
-              modelComparisonMessages[
-                model.id as keyof typeof modelComparisonMessages
-              ];
             const descriptionMessage =
               modelDescriptionMessages[
                 model.id as keyof typeof modelDescriptionMessages
@@ -162,10 +151,6 @@ export function ModelPanel({
                     {model.recommended ? (
                       <Badge variant="secondary">
                         <Trans>建議</Trans>
-                      </Badge>
-                    ) : model.role === "forcedAlignment" ? (
-                      <Badge variant="outline">
-                        <Trans>字幕對齊</Trans>
                       </Badge>
                     ) : null}
                   </CardTitle>
@@ -207,14 +192,6 @@ export function ModelPanel({
                       : model.description}
                   </CardDescription>
                 </CardHeader>
-
-                <CardContent className="flex min-w-0 flex-col gap-2">
-                  {comparisonMessage ? (
-                    <p className="m-0 text-[0.8125rem] leading-[1.4] font-medium">
-                      {_(comparisonMessage)}
-                    </p>
-                  ) : null}
-                </CardContent>
 
                 <CardFooter className="flex flex-col items-stretch gap-3 py-2">
                   <div className="flex min-w-0 flex-wrap items-center justify-between gap-2.5">

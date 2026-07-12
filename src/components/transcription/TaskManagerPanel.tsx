@@ -542,12 +542,6 @@ export function TaskManagerPanel({
             <DialogTitle>
               <Trans>新增轉錄任務</Trans>
             </DialogTitle>
-            <DialogDescription>
-              <Trans>
-                {taskDraft.files.length}{" "}
-                個檔案會使用相同模型、語言、提示詞、斷句方式與輸出資料夾。
-              </Trans>
-            </DialogDescription>
           </DialogHeader>
 
           <div className="grid max-h-[min(620px,calc(100vh-220px))] min-h-0 scroll-fade grid-cols-1 gap-x-6 gap-y-5 overflow-x-hidden overflow-y-auto p-1 md:grid-cols-2">
