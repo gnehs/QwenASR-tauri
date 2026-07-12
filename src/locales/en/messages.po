@@ -1050,6 +1050,15 @@ msgid "重新下載並加入佇列"
 msgstr "Download again and add to queue"
 
 #: src/components/transcription/ModelPanel.tsx:116
+msgid "{0} 更多操作"
+msgstr "{0} More actions"
+
+msgid "在 Finder 顯示"
+msgstr "Show in Finder"
+
+msgid "重新下載"
+msgstr "Redownload"
+
 msgid "重新整理"
 msgstr "Refresh"
 

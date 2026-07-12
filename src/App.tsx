@@ -109,6 +109,8 @@ function App() {
                       ffmpeg={workspace.ffmpeg}
                       onDownload={workspace.downloadSelectedModel}
                       onDeleteModel={workspace.deleteModel}
+                      onOpenModelFolder={workspace.openModelFolder}
+                      onRedownload={workspace.redownloadModel}
                       onRefresh={workspace.refreshRuntime}
                     />
                   </div>

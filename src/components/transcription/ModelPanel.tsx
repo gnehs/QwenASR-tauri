@@ -4,6 +4,8 @@ import { useLingui as useLinguiRuntime } from "@lingui/react";
 import { Trans, useLingui as useLinguiMacro } from "@lingui/react/macro";
 import {
   DownloadIcon,
+  EllipsisIcon,
+  FolderOpenIcon,
   HardDriveIcon,
   RefreshCwIcon,
   Trash2Icon,
@@ -13,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardFooter,
@@ -29,6 +32,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Empty,
   EmptyContent,
@@ -70,6 +79,8 @@ export function ModelPanel({
   isTranscribing,
   onDownload,
   onDeleteModel,
+  onOpenModelFolder,
+  onRedownload,
   onRefresh,
 }: {
   models: ModelStatus[];
@@ -80,6 +91,8 @@ export function ModelPanel({
   isTranscribing: boolean;
   onDownload: (modelId?: string) => void;
   onDeleteModel: (modelId: string) => Promise<boolean>;
+  onOpenModelFolder: (modelId: string) => Promise<void>;
+  onRedownload: (modelId: string) => Promise<void>;
   onRefresh: () => void;
 }) {
   const { _ } = useLinguiRuntime();
@@ -156,6 +169,38 @@ export function ModelPanel({
                       </Badge>
                     ) : null}
                   </CardTitle>
+                  {model.installed ? (
+                    <CardAction>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              aria-label={t`${model.title} 更多操作`}
+                            />
+                          }
+                        >
+                          <EllipsisIcon />
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-48">
+                          <DropdownMenuItem
+                            onClick={() => void onOpenModelFolder(model.id)}
+                          >
+                            <FolderOpenIcon />
+                            <Trans>在 Finder 顯示</Trans>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            disabled={!canDeleteModel}
+                            onClick={() => void onRedownload(model.id)}
+                          >
+                            <RefreshCwIcon />
+                            <Trans>重新下載</Trans>
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </CardAction>
+                  ) : null}
                   <CardDescription>
                     {descriptionMessage
                       ? _(descriptionMessage)

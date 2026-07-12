@@ -9,6 +9,7 @@ import {
   requestPermission,
   sendNotification,
 } from "@tauri-apps/plugin-notification";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 
 import {
@@ -758,6 +759,24 @@ export function useTranscriptionWorkspace() {
     }
   }
 
+  async function redownloadModel(modelId: string) {
+    const deleted = await deleteModel(modelId);
+    if (deleted) {
+      await downloadModel(modelId);
+    }
+  }
+
+  async function openModelFolder(modelId: string) {
+    const model = models.find((item) => item.id === modelId);
+    if (!model?.installed) return;
+
+    try {
+      await revealItemInDir(model.path);
+    } catch (error) {
+      toast.error(formatInvokeError(error));
+    }
+  }
+
   async function confirmTaskDraft() {
     if (!canConfirmTasks || !draftModel) return;
 
@@ -926,6 +945,8 @@ export function useTranscriptionWorkspace() {
     clearFinishedTasks,
     downloadSelectedModel,
     deleteModel,
+    redownloadModel,
+    openModelFolder,
     refreshRuntime,
   };
 }

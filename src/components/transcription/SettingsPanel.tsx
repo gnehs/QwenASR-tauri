@@ -36,6 +36,8 @@ export function SettingsPanel({
   ffmpeg,
   onDownload,
   onDeleteModel,
+  onOpenModelFolder,
+  onRedownload,
   onRefresh,
 }: {
   models: ModelStatus[];
@@ -47,6 +49,8 @@ export function SettingsPanel({
   ffmpeg: FfmpegStatus;
   onDownload: (modelId?: string) => void;
   onDeleteModel: (modelId: string) => Promise<boolean>;
+  onOpenModelFolder: (modelId: string) => Promise<void>;
+  onRedownload: (modelId: string) => Promise<void>;
   onRefresh: () => void;
 }) {
   const { t } = useLingui();
@@ -117,6 +121,8 @@ export function SettingsPanel({
         isTranscribing={isTranscribing}
         onDownload={onDownload}
         onDeleteModel={onDeleteModel}
+        onOpenModelFolder={onOpenModelFolder}
+        onRedownload={onRedownload}
         onRefresh={onRefresh}
       />
       <RuntimePanel ffmpeg={ffmpeg} />
