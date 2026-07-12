@@ -158,6 +158,7 @@ function App() {
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <TaskManagerPanel
               tasks={workspace.tasks}
+              transcribedFileCount={workspace.transcribedFileCount}
               models={workspace.transcriptionModels}
               taskDraft={workspace.taskDraft}
               draftModel={workspace.draftModel}

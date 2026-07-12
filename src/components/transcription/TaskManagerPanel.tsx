@@ -83,6 +83,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { TranscriptionProgressPanel } from "@/components/transcription/TranscriptionProgressPanel";
+import { SupportBanner } from "@/components/transcription/SupportBanner";
 import { localizeLanguageGroups } from "@/lib/app-constants";
 import {
   basename,
@@ -212,6 +213,7 @@ function timingRows(
 
 export function TaskManagerPanel({
   tasks,
+  transcribedFileCount,
   models,
   taskDraft,
   draftModel,
@@ -236,6 +238,7 @@ export function TaskManagerPanel({
   cancellingTaskId,
 }: {
   tasks: TranscriptionTask[];
+  transcribedFileCount: number;
   models: ModelStatus[];
   taskDraft: TaskDraft;
   draftModel: ModelStatus | undefined;
@@ -264,9 +267,13 @@ export function TaskManagerPanel({
   const outputId = useId();
   const segmentId = useId();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [isSupportBannerDismissed, setIsSupportBannerDismissed] =
+    useState(false);
   const [etaTick, setEtaTick] = useState(() => Date.now());
   const selectedTask = tasks.find((task) => task.id === selectedTaskId) ?? null;
   const hasRunningTasks = tasks.some((task) => task.status === "running");
+  const shouldShowSupportBanner =
+    transcribedFileCount > 10 && !isSupportBannerDismissed;
   const modelItems = useMemo(
     () =>
       models.map((model) => ({
@@ -479,6 +486,11 @@ export function TaskManagerPanel({
                       </Button>
                     </EmptyContent>
                   </div>
+                  {shouldShowSupportBanner ? (
+                    <SupportBanner
+                      onDismiss={() => setIsSupportBannerDismissed(true)}
+                    />
+                  ) : null}
                   <p className="m-0 text-center text-sm/relaxed text-muted-foreground">
                     wav、mp3、m4a、mp4、mov、mkv、webm
                   </p>

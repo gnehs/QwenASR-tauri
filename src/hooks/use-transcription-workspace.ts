@@ -31,6 +31,7 @@ import type {
 
 const selectedModelStorageKey = "qwenasr:selected-model-id";
 const transcriptionOptionsStorageKey = "qwenasr:transcription-options";
+const transcribedFileCountStorageKey = "qwenasr:transcribed-file-count";
 const forcedAlignerModelId = "qwen3-forced-aligner-0.6b";
 const forcedAlignmentLanguages = new Set([
   "chinese",
@@ -138,6 +139,26 @@ function writeStoredTranscriptionOptions(options: OptionsState) {
     );
   } catch {
     // Ignore storage failures so task creation still works in restricted webviews.
+  }
+}
+
+function readStoredTranscribedFileCount() {
+  try {
+    const raw = window.localStorage.getItem(transcribedFileCountStorageKey);
+    if (raw === null) return 0;
+
+    const count = Number(raw);
+    return Number.isSafeInteger(count) && count >= 0 ? count : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeStoredTranscribedFileCount(count: number) {
+  try {
+    window.localStorage.setItem(transcribedFileCountStorageKey, String(count));
+  } catch {
+    // Ignore storage failures so transcription still works in restricted webviews.
   }
 }
 
@@ -316,6 +337,9 @@ export function useTranscriptionWorkspace() {
   const [isTaskDialogOpen, setTaskDialogOpen] = useState(false);
   const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [tasks, setTasks] = useState<TranscriptionTask[]>([]);
+  const [transcribedFileCount, setTranscribedFileCount] = useState(
+    readStoredTranscribedFileCount,
+  );
   const [downloadProgress, setDownloadProgress] =
     useState<DownloadProgress | null>(null);
   const [
@@ -476,6 +500,11 @@ export function useTranscriptionWorkspace() {
               : item,
           ),
         );
+        setTranscribedFileCount((current) => {
+          const next = current + 1;
+          writeStoredTranscribedFileCount(next);
+          return next;
+        });
         toast.success(t`${basename(task.audioPath)} 轉錄完成`);
         void sendTaskNotification(
           task,
@@ -915,6 +944,7 @@ export function useTranscriptionWorkspace() {
     taskDraft,
     draftModel,
     tasks,
+    transcribedFileCount,
     outputDir,
     options,
     downloadProgress,
