@@ -54,7 +54,9 @@ export function OptionsPanel({
     () => languageGroups.flatMap((group) => group.items),
     [languageGroups],
   );
-  const language = languageItems.find((item) => item.value === options.language);
+  const language = languageItems.find(
+    (item) => item.value === options.language,
+  );
   const outputFormats = [
     options.writeTxt ? "TXT" : null,
     options.writeSrt ? "SRT" : null,
@@ -65,16 +67,16 @@ export function OptionsPanel({
     outputFormats.length > 0
       ? `${_(msg`輸出`)} ${outputFormats.join("、")}`
       : _(msg`不輸出檔案`),
-    options.segmentByPunctuation
-      ? _(msg`依標點斷句`)
-      : _(msg`依音訊片段斷句`),
+    options.segmentByPunctuation ? _(msg`依標點斷句`) : _(msg`依音訊片段斷句`),
   ].filter(Boolean);
 
   return (
     <Sheet>
       <div className="options-strip">
         <div className="min-w-0">
-          <div className="text-sm font-medium"><Trans>轉錄設定</Trans></div>
+          <div className="text-sm font-medium">
+            <Trans>轉錄設定</Trans>
+          </div>
           <div className="truncate text-sm text-muted-foreground">
             {summaryItems.join(" · ")}
           </div>
@@ -86,15 +88,21 @@ export function OptionsPanel({
       </div>
       <SheetContent className="options-sheet">
         <SheetHeader>
-          <SheetTitle><Trans>轉錄設定</Trans></SheetTitle>
+          <SheetTitle>
+            <Trans>轉錄設定</Trans>
+          </SheetTitle>
           <SheetDescription>
-            <Trans>多數情況可以維持自動偵測，只在需要指定語言或輸出格式時修改。</Trans>
+            <Trans>
+              多數情況可以維持自動偵測，只在需要指定語言或輸出格式時修改。
+            </Trans>
           </SheetDescription>
         </SheetHeader>
         <div className="options-sheet-body scroll-fade">
           <FieldGroup>
             <Field>
-              <FieldLabel><Trans>輸出語言</Trans></FieldLabel>
+              <FieldLabel>
+                <Trans>輸出語言</Trans>
+              </FieldLabel>
               <Select
                 items={languageItems}
                 value={options.language}
@@ -103,7 +111,9 @@ export function OptionsPanel({
                 }
               >
                 <SelectTrigger className="w-full" aria-label={_(msg`輸出語言`)}>
-                  <SelectValue>{language?.label ?? <Trans>自動偵測</Trans>}</SelectValue>
+                  <SelectValue>
+                    {language?.label ?? <Trans>自動偵測</Trans>}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent alignItemWithTrigger={false}>
                   <SelectGroup>
@@ -123,14 +133,22 @@ export function OptionsPanel({
             </Field>
 
             <FieldSet>
-              <FieldLegend variant="label"><Trans>輸出格式</Trans></FieldLegend>
-              <FieldDescription><Trans>可同時輸出多種格式至指定資料夾。</Trans></FieldDescription>
+              <FieldLegend variant="label">
+                <Trans>輸出格式</Trans>
+              </FieldLegend>
+              <FieldDescription>
+                <Trans>可同時輸出多種格式至指定資料夾。</Trans>
+              </FieldDescription>
               <FieldGroup className="gap-3">
                 <Field orientation="horizontal">
                   <FieldLabel htmlFor={`${outputId}-txt`}>
                     <FieldContent>
-                      <FieldTitle><Trans>TXT 文字</Trans></FieldTitle>
-                      <FieldDescription id={`${outputId}-txt-description`}><Trans>輸出純文字逐字稿。</Trans></FieldDescription>
+                      <FieldTitle>
+                        <Trans>TXT 文字</Trans>
+                      </FieldTitle>
+                      <FieldDescription id={`${outputId}-txt-description`}>
+                        <Trans>輸出純文字逐字稿。</Trans>
+                      </FieldDescription>
                     </FieldContent>
                   </FieldLabel>
                   <Checkbox
@@ -145,8 +163,12 @@ export function OptionsPanel({
                 <Field orientation="horizontal">
                   <FieldLabel htmlFor={`${outputId}-srt`}>
                     <FieldContent>
-                      <FieldTitle><Trans>SRT 字幕</Trans></FieldTitle>
-                      <FieldDescription id={`${outputId}-srt-description`}><Trans>建立可隨音訊同步顯示的字幕檔。</Trans></FieldDescription>
+                      <FieldTitle>
+                        <Trans>SRT 字幕</Trans>
+                      </FieldTitle>
+                      <FieldDescription id={`${outputId}-srt-description`}>
+                        <Trans>建立可隨音訊同步顯示的字幕檔。</Trans>
+                      </FieldDescription>
                     </FieldContent>
                   </FieldLabel>
                   <Checkbox
@@ -161,8 +183,12 @@ export function OptionsPanel({
                 <Field orientation="horizontal">
                   <FieldLabel htmlFor={`${outputId}-json`}>
                     <FieldContent>
-                      <FieldTitle><Trans>JSON 資料</Trans></FieldTitle>
-                      <FieldDescription id={`${outputId}-json-description`}><Trans>輸出含分段資料，支援語言會附逐字時間戳。</Trans></FieldDescription>
+                      <FieldTitle>
+                        <Trans>JSON 資料</Trans>
+                      </FieldTitle>
+                      <FieldDescription id={`${outputId}-json-description`}>
+                        <Trans>輸出含分段資料，支援語言會附逐字時間戳。</Trans>
+                      </FieldDescription>
                     </FieldContent>
                   </FieldLabel>
                   <Checkbox
@@ -198,7 +224,9 @@ export function OptionsPanel({
           </FieldGroup>
         </div>
         <SheetFooter>
-          <SheetClose render={<Button />}><Trans>完成</Trans></SheetClose>
+          <SheetClose render={<Button />}>
+            <Trans>完成</Trans>
+          </SheetClose>
         </SheetFooter>
       </SheetContent>
     </Sheet>

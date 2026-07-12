@@ -6,7 +6,9 @@ import App from "./App";
 import { dynamicActivate, getInitialLocale } from "./i18n";
 import "./index.css";
 
-const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
+const root = ReactDOM.createRoot(
+  document.getElementById("root") as HTMLElement,
+);
 
 async function bootstrap() {
   await dynamicActivate(getInitialLocale());

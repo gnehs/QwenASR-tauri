@@ -1,0 +1,5 @@
+node_modules
+dist
+src-tauri
+src/locales/**/messages.js
+pnpm-lock.yaml

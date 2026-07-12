@@ -50,8 +50,12 @@ export function ResultsPanel({
   return (
     <Card className="h-full">
       <CardHeader>
-        <CardTitle><Trans>輸出結果</Trans></CardTitle>
-        <CardDescription><Trans>完成後可檢查全文、偵測語言、輸出路徑與時間分段。</Trans></CardDescription>
+        <CardTitle>
+          <Trans>輸出結果</Trans>
+        </CardTitle>
+        <CardDescription>
+          <Trans>完成後可檢查全文、偵測語言、輸出路徑與時間分段。</Trans>
+        </CardDescription>
         {latest ? (
           <CardAction>
             <Badge variant="secondary">
@@ -85,10 +89,7 @@ export function ResultsPanel({
             </EmptyHeader>
           </Empty>
         ) : (
-          <ScrollArea
-            className="h-full"
-            viewportClassName="scroll-fade"
-          >
+          <ScrollArea className="h-full" viewportClassName="scroll-fade">
             <div className="flex flex-col gap-4 pr-3">
               <div className="result-summary">
                 <FileTextIcon />
@@ -98,25 +99,49 @@ export function ResultsPanel({
                   </div>
                   <div className="truncate text-sm text-muted-foreground">
                     <div className="truncate">
-                      {latest.languageSource === "specified" ? <Trans>轉錄語言</Trans> : <Trans>偵測語言</Trans>}：
-                      {latest.detectedLanguage ?? <Trans>未提供</Trans>}
+                      {latest.languageSource === "specified" ? (
+                        <Trans>轉錄語言</Trans>
+                      ) : (
+                        <Trans>偵測語言</Trans>
+                      )}
+                      ：{latest.detectedLanguage ?? <Trans>未提供</Trans>}
                     </div>
                     <div className="truncate text-xs">
                       <Trans>語言來源</Trans>：
-                      {latest.languageSource === "specified" ? <Trans>指定語言</Trans> :
-                        latest.languageSource === "detected" ? <Trans>模型偵測</Trans> : <Trans>未知來源</Trans>}
+                      {latest.languageSource === "specified" ? (
+                        <Trans>指定語言</Trans>
+                      ) : latest.languageSource === "detected" ? (
+                        <Trans>模型偵測</Trans>
+                      ) : (
+                        <Trans>未知來源</Trans>
+                      )}
                     </div>
                     <div className="truncate text-xs">
                       <Trans>時間對齊</Trans>：
-                      {latest.alignmentStatus === "forced" ? <Trans>精準對齊</Trans> :
-                        latest.alignmentStatus === "partial" ? <Trans>部分對齊</Trans> : <Trans>估算時間</Trans>}
-                      {typeof latest.alignmentCoverage === "number" ? ` · ${(Math.max(0, Math.min(1, latest.alignmentCoverage)) * 100).toFixed(0)}%` : null}
+                      {latest.alignmentStatus === "forced" ? (
+                        <Trans>精準對齊</Trans>
+                      ) : latest.alignmentStatus === "partial" ? (
+                        <Trans>部分對齊</Trans>
+                      ) : (
+                        <Trans>估算時間</Trans>
+                      )}
+                      {typeof latest.alignmentCoverage === "number"
+                        ? ` · ${(Math.max(0, Math.min(1, latest.alignmentCoverage)) * 100).toFixed(0)}%`
+                        : null}
                     </div>
                     <div className="flex flex-col gap-0.5 truncate text-xs">
-                      {latest.txtPath ? <span>TXT: {latest.txtPath}</span> : null}
-                      {latest.srtPath ? <span>SRT: {latest.srtPath}</span> : null}
-                      {latest.jsonPath ? <span>JSON: {latest.jsonPath}</span> : null}
-                      {!latest.txtPath && !latest.srtPath && !latest.jsonPath ? (
+                      {latest.txtPath ? (
+                        <span>TXT: {latest.txtPath}</span>
+                      ) : null}
+                      {latest.srtPath ? (
+                        <span>SRT: {latest.srtPath}</span>
+                      ) : null}
+                      {latest.jsonPath ? (
+                        <span>JSON: {latest.jsonPath}</span>
+                      ) : null}
+                      {!latest.txtPath &&
+                      !latest.srtPath &&
+                      !latest.jsonPath ? (
                         <Trans>未輸出檔案</Trans>
                       ) : null}
                     </div>
@@ -132,8 +157,12 @@ export function ResultsPanel({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead><Trans>時間</Trans></TableHead>
-                    <TableHead><Trans>文字</Trans></TableHead>
+                    <TableHead>
+                      <Trans>時間</Trans>
+                    </TableHead>
+                    <TableHead>
+                      <Trans>文字</Trans>
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -152,14 +181,26 @@ export function ResultsPanel({
               {results.length > 1 ? (
                 <>
                   <Separator />
-                  <div className="text-sm font-medium"><Trans>批次結果</Trans></div>
+                  <div className="text-sm font-medium">
+                    <Trans>批次結果</Trans>
+                  </div>
                   {results.map((result) => (
                     <div key={result.audioPath} className="result-row">
                       <span className="truncate">
                         {basename(result.audioPath)}
                       </span>
-                      <Badge variant={result.srtPath || result.txtPath || result.jsonPath ? "secondary" : "outline"}>
-                        {result.srtPath || result.txtPath || result.jsonPath ? <Trans>已輸出</Trans> : <Trans>未輸出</Trans>}
+                      <Badge
+                        variant={
+                          result.srtPath || result.txtPath || result.jsonPath
+                            ? "secondary"
+                            : "outline"
+                        }
+                      >
+                        {result.srtPath || result.txtPath || result.jsonPath ? (
+                          <Trans>已輸出</Trans>
+                        ) : (
+                          <Trans>未輸出</Trans>
+                        )}
                       </Badge>
                     </div>
                   ))}

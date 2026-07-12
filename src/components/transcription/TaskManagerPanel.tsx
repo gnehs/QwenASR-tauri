@@ -156,12 +156,15 @@ function taskLanguageLabel(
   if (task.options.language === "auto") return t`自動偵測`;
 
   return (
-    localizedLanguageItems.find((item) => item.value === task.options.language)?.label ??
-    t`自動偵測`
+    localizedLanguageItems.find((item) => item.value === task.options.language)
+      ?.label ?? t`自動偵測`
   );
 }
 
-function timingRows(timings: TranscriptionTimings, translate: RuntimeTranslate) {
+function timingRows(
+  timings: TranscriptionTimings,
+  translate: RuntimeTranslate,
+) {
   return [
     [
       translate(msg`總時間`),
@@ -273,10 +276,7 @@ export function TaskManagerPanel({
       })),
     [models],
   );
-  const localizedLanguageGroups = useMemo(
-    () => localizeLanguageGroups(_),
-    [_],
-  );
+  const localizedLanguageGroups = useMemo(() => localizeLanguageGroups(_), [_]);
   const localizedLanguageItems = useMemo(
     () => localizedLanguageGroups.flatMap((group) => group.items),
     [localizedLanguageGroups],
@@ -319,18 +319,31 @@ export function TaskManagerPanel({
         <section className="task-list-panel" aria-label={t`轉錄任務`}>
           <div className="task-list-content">
             <ScrollArea
-              className={cn("task-table-wrap", tasks.length === 0 && "is-empty")}
+              className={cn(
+                "task-table-wrap",
+                tasks.length === 0 && "is-empty",
+              )}
               viewportClassName="scroll-fade"
             >
               {tasks.length > 0 ? (
                 <Table className="task-table">
                   <TableHeader>
                     <TableRow>
-                      <TableHead><Trans>檔案</Trans></TableHead>
-                      <TableHead><Trans>狀態</Trans></TableHead>
-                      <TableHead><Trans>進度</Trans></TableHead>
-                      <TableHead><Trans>設定</Trans></TableHead>
-                      <TableHead className="text-right"><Trans>動作</Trans></TableHead>
+                      <TableHead>
+                        <Trans>檔案</Trans>
+                      </TableHead>
+                      <TableHead>
+                        <Trans>狀態</Trans>
+                      </TableHead>
+                      <TableHead>
+                        <Trans>進度</Trans>
+                      </TableHead>
+                      <TableHead>
+                        <Trans>設定</Trans>
+                      </TableHead>
+                      <TableHead className="text-right">
+                        <Trans>動作</Trans>
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -356,7 +369,9 @@ export function TaskManagerPanel({
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge variant={meta.badge}>{statusLabel(task.status, _)}</Badge>
+                            <Badge variant={meta.badge}>
+                              {statusLabel(task.status, _)}
+                            </Badge>
                           </TableCell>
                           <TableCell className="task-progress-cell">
                             <div className="task-progress-stack">
@@ -373,7 +388,11 @@ export function TaskManagerPanel({
                           <TableCell className="task-options-cell">
                             <div className="truncate">{task.modelTitle}</div>
                             <div className="truncate text-xs text-muted-foreground">
-                              {taskLanguageLabel(task, t, localizedLanguageItems)}
+                              {taskLanguageLabel(
+                                task,
+                                t,
+                                localizedLanguageItems,
+                              )}
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
@@ -443,8 +462,12 @@ export function TaskManagerPanel({
                       <EmptyMedia variant="icon">
                         <ArchiveIcon />
                       </EmptyMedia>
-                      <EmptyTitle><Trans>尚無任務</Trans></EmptyTitle>
-                      <EmptyDescription><Trans>拖放檔案到這裡來建立任務</Trans></EmptyDescription>
+                      <EmptyTitle>
+                        <Trans>尚無任務</Trans>
+                      </EmptyTitle>
+                      <EmptyDescription>
+                        <Trans>拖放檔案到這裡來建立任務</Trans>
+                      </EmptyDescription>
                     </EmptyHeader>
                     <EmptyContent>
                       <Button
@@ -452,7 +475,11 @@ export function TaskManagerPanel({
                         onClick={onPickFiles}
                       >
                         <FileAudioIcon data-icon="inline-start" />
-                        {isDraggingFiles ? <Trans>放開以加入任務</Trans> : <Trans>選擇檔案</Trans>}
+                        {isDraggingFiles ? (
+                          <Trans>放開以加入任務</Trans>
+                        ) : (
+                          <Trans>選擇檔案</Trans>
+                        )}
                       </Button>
                     </EmptyContent>
                   </div>
@@ -478,7 +505,9 @@ export function TaskManagerPanel({
         >
           <SheetHeader className="pr-12">
             <div className="flex items-center gap-2">
-              <SheetTitle><Trans>任務詳情</Trans></SheetTitle>
+              <SheetTitle>
+                <Trans>任務詳情</Trans>
+              </SheetTitle>
               {selectedTask ? (
                 <Badge variant={statusMeta[selectedTask.status].badge}>
                   {statusLabel(selectedTask.status, _)}
@@ -487,9 +516,15 @@ export function TaskManagerPanel({
             </div>
             <SheetDescription
               className="truncate"
-              title={selectedTask ? basename(selectedTask.audioPath) : undefined}
+              title={
+                selectedTask ? basename(selectedTask.audioPath) : undefined
+              }
             >
-              {selectedTask ? basename(selectedTask.audioPath) : <Trans>尚未選取任務</Trans>}
+              {selectedTask ? (
+                basename(selectedTask.audioPath)
+              ) : (
+                <Trans>尚未選取任務</Trans>
+              )}
             </SheetDescription>
           </SheetHeader>
           <Separator />
@@ -508,16 +543,23 @@ export function TaskManagerPanel({
       <Dialog open={isTaskDialogOpen} onOpenChange={onTaskDialogOpenChange}>
         <DialogContent className="task-dialog">
           <DialogHeader>
-            <DialogTitle><Trans>新增轉錄任務</Trans></DialogTitle>
+            <DialogTitle>
+              <Trans>新增轉錄任務</Trans>
+            </DialogTitle>
             <DialogDescription>
-              <Trans>{taskDraft.files.length} 個檔案會使用相同模型、語言、提示詞、斷句方式與輸出資料夾。</Trans>
+              <Trans>
+                {taskDraft.files.length}{" "}
+                個檔案會使用相同模型、語言、提示詞、斷句方式與輸出資料夾。
+              </Trans>
             </DialogDescription>
           </DialogHeader>
 
           <div className="task-dialog-body scroll-fade">
             <FieldGroup>
               <Field>
-                <FieldLabel><Trans>轉錄模型</Trans></FieldLabel>
+                <FieldLabel>
+                  <Trans>轉錄模型</Trans>
+                </FieldLabel>
                 <Select
                   items={modelItems}
                   value={taskDraft.modelId}
@@ -546,7 +588,9 @@ export function TaskManagerPanel({
               </Field>
 
               <Field>
-                <FieldLabel><Trans>轉錄語言</Trans></FieldLabel>
+                <FieldLabel>
+                  <Trans>轉錄語言</Trans>
+                </FieldLabel>
                 <Select
                   items={localizedLanguageItems}
                   value={taskDraft.options.language}
@@ -579,7 +623,9 @@ export function TaskManagerPanel({
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="task-output-dir"><Trans>輸出資料夾</Trans></FieldLabel>
+                <FieldLabel htmlFor="task-output-dir">
+                  <Trans>輸出資料夾</Trans>
+                </FieldLabel>
                 <div className="flex gap-2">
                   <Input
                     id="task-output-dir"
@@ -595,7 +641,9 @@ export function TaskManagerPanel({
               </Field>
 
               <Field>
-                <FieldLabel htmlFor="task-context"><Trans>辨識提示詞</Trans></FieldLabel>
+                <FieldLabel htmlFor="task-context">
+                  <Trans>辨識提示詞</Trans>
+                </FieldLabel>
                 <Textarea
                   id="task-context"
                   className="min-h-24 resize-y"
@@ -612,12 +660,16 @@ export function TaskManagerPanel({
                   }
                 />
                 <FieldDescription>
-                  <Trans>輸入容易辨識錯誤的人名、專有名詞或對話背景，幫助模型選擇正確用字。</Trans>
+                  <Trans>
+                    輸入容易辨識錯誤的人名、專有名詞或對話背景，幫助模型選擇正確用字。
+                  </Trans>
                 </FieldDescription>
               </Field>
 
               <FieldSet>
-                <FieldLegend variant="label"><Trans>輸出格式</Trans></FieldLegend>
+                <FieldLegend variant="label">
+                  <Trans>輸出格式</Trans>
+                </FieldLegend>
                 <FieldDescription>
                   <Trans>可同時輸出多種格式至指定資料夾。</Trans>
                 </FieldDescription>
@@ -625,8 +677,12 @@ export function TaskManagerPanel({
                   <Field orientation="horizontal">
                     <FieldLabel htmlFor={`${outputId}-txt`}>
                       <FieldContent>
-                        <FieldTitle>TXT <Trans>文字</Trans></FieldTitle>
-                        <FieldDescription id={`${outputId}-txt-description`}><Trans>輸出純文字逐字稿。</Trans></FieldDescription>
+                        <FieldTitle>
+                          TXT <Trans>文字</Trans>
+                        </FieldTitle>
+                        <FieldDescription id={`${outputId}-txt-description`}>
+                          <Trans>輸出純文字逐字稿。</Trans>
+                        </FieldDescription>
                       </FieldContent>
                     </FieldLabel>
                     <Checkbox
@@ -647,9 +703,13 @@ export function TaskManagerPanel({
                   <Field orientation="horizontal">
                     <FieldLabel htmlFor={`${outputId}-srt`}>
                       <FieldContent>
-                        <FieldTitle>SRT <Trans>字幕</Trans></FieldTitle>
+                        <FieldTitle>
+                          SRT <Trans>字幕</Trans>
+                        </FieldTitle>
                         <FieldDescription id={`${outputId}-srt-description`}>
-                          <Trans>建立字幕檔，首次使用時需下載約 1.8 GB 的對齊模型。</Trans>
+                          <Trans>
+                            建立字幕檔，首次使用時需下載約 1.8 GB 的對齊模型。
+                          </Trans>
                         </FieldDescription>
                       </FieldContent>
                     </FieldLabel>
@@ -671,8 +731,14 @@ export function TaskManagerPanel({
                   <Field orientation="horizontal">
                     <FieldLabel htmlFor={`${outputId}-json`}>
                       <FieldContent>
-                        <FieldTitle>JSON <Trans>資料</Trans></FieldTitle>
-                        <FieldDescription id={`${outputId}-json-description`}><Trans>輸出含分段資料，支援語言會附逐字時間戳。</Trans></FieldDescription>
+                        <FieldTitle>
+                          JSON <Trans>資料</Trans>
+                        </FieldTitle>
+                        <FieldDescription id={`${outputId}-json-description`}>
+                          <Trans>
+                            輸出含分段資料，支援語言會附逐字時間戳。
+                          </Trans>
+                        </FieldDescription>
                       </FieldContent>
                     </FieldLabel>
                     <Checkbox
@@ -699,7 +765,10 @@ export function TaskManagerPanel({
                     <Trans>依標點符號斷句</Trans>
                   </FieldTitle>
                   <FieldDescription id={`${segmentId}-description`}>
-                    <Trans>自動依句號、逗號等標點符號斷句，適用於 SRT 字幕產生等情況。</Trans>
+                    <Trans>
+                      自動依句號、逗號等標點符號斷句，適用於 SRT
+                      字幕產生等情況。
+                    </Trans>
                   </FieldDescription>
                 </FieldContent>
                 <Switch
@@ -747,7 +816,11 @@ export function TaskManagerPanel({
               ) : (
                 <PlusIcon data-icon="inline-start" />
               )}
-              {isConfirmingTasks ? <Trans>新增中</Trans> : <Trans>新增任務</Trans>}
+              {isConfirmingTasks ? (
+                <Trans>新增中</Trans>
+              ) : (
+                <Trans>新增任務</Trans>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -766,18 +839,26 @@ export function TaskManagerPanel({
           showCloseButton={!isConfirmingTasks && !isDownloading}
         >
           <DialogHeader>
-            <DialogTitle><Trans>下載模型</Trans></DialogTitle>
+            <DialogTitle>
+              <Trans>下載模型</Trans>
+            </DialogTitle>
             <DialogDescription>
-              {draftModel
-                ? <Trans>新增任務需要先下載 {draftModel.title}；完成後會自動加入佇列。</Trans>
-                : <Trans>新增任務需要先下載模型；完成後會自動加入佇列。</Trans>}
+              {draftModel ? (
+                <Trans>
+                  新增任務需要先下載 {draftModel.title}；完成後會自動加入佇列。
+                </Trans>
+              ) : (
+                <Trans>新增任務需要先下載模型；完成後會自動加入佇列。</Trans>
+              )}
             </DialogDescription>
           </DialogHeader>
 
           {modelDownloadError ? (
             <Alert variant="destructive">
               <TriangleAlertIcon />
-              <AlertTitle><Trans>模型下載失敗</Trans></AlertTitle>
+              <AlertTitle>
+                <Trans>模型下載失敗</Trans>
+              </AlertTitle>
               <AlertDescription>{modelDownloadError}</AlertDescription>
             </Alert>
           ) : (
@@ -819,7 +900,11 @@ export function TaskManagerPanel({
               ) : (
                 <DownloadIcon data-icon="inline-start" />
               )}
-              {modelDownloadError ? <Trans>重新下載並加入佇列</Trans> : <Trans>下載中</Trans>}
+              {modelDownloadError ? (
+                <Trans>重新下載並加入佇列</Trans>
+              ) : (
+                <Trans>下載中</Trans>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -867,8 +952,12 @@ function TaskDetail({
     return (
       <Alert variant="destructive">
         <TriangleAlertIcon />
-        <AlertTitle><Trans>轉錄失敗</Trans></AlertTitle>
-        <AlertDescription>{task.error ?? <Trans>未知錯誤</Trans>}</AlertDescription>
+        <AlertTitle>
+          <Trans>轉錄失敗</Trans>
+        </AlertTitle>
+        <AlertDescription>
+          {task.error ?? <Trans>未知錯誤</Trans>}
+        </AlertDescription>
       </Alert>
     );
   }
@@ -877,8 +966,12 @@ function TaskDetail({
     return (
       <Alert>
         <CircleStopIcon />
-        <AlertTitle><Trans>轉錄已終止</Trans></AlertTitle>
-        <AlertDescription><Trans>此任務已停止，未產生新的轉錄結果。</Trans></AlertDescription>
+        <AlertTitle>
+          <Trans>轉錄已終止</Trans>
+        </AlertTitle>
+        <AlertDescription>
+          <Trans>此任務已停止，未產生新的轉錄結果。</Trans>
+        </AlertDescription>
       </Alert>
     );
   }
@@ -890,9 +983,12 @@ function TaskDetail({
           <EmptyMedia variant="icon">
             <ArchiveIcon />
           </EmptyMedia>
-          <EmptyTitle><Trans>等待處理</Trans></EmptyTitle>
+          <EmptyTitle>
+            <Trans>等待處理</Trans>
+          </EmptyTitle>
           <EmptyDescription>
-            {task.modelTitle} · {taskLanguageLabel(task, t, localizedLanguageItems)}
+            {task.modelTitle} ·{" "}
+            {taskLanguageLabel(task, t, localizedLanguageItems)}
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -918,30 +1014,34 @@ function TaskDetail({
                 <Trans>即時逐字稿</Trans>
               </div>
             </div>
-            <Badge variant="outline"><Trans>{partialSegments.length} 段</Trans></Badge>
+            <Badge variant="outline">
+              <Trans>{partialSegments.length} 段</Trans>
+            </Badge>
           </div>
           {partialSegments.length > 0 ? (
-              <ScrollArea
-                className="task-partial-scroll"
-                viewportClassName="scroll-fade"
-                viewportRef={liveTranscriptViewportRef}
-              >
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead><Trans>文字</Trans></TableHead>
+            <ScrollArea
+              className="task-partial-scroll"
+              viewportClassName="scroll-fade"
+              viewportRef={liveTranscriptViewportRef}
+            >
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <Trans>文字</Trans>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {partialSegments.map((segment, index) => (
+                    <TableRow key={`${segment.startMs}-${index}`}>
+                      <TableCell className="srt-preview-text align-top">
+                        {segment.text}
+                      </TableCell>
                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {partialSegments.map((segment, index) => (
-                      <TableRow key={`${segment.startMs}-${index}`}>
-                        <TableCell className="srt-preview-text align-top">
-                          {segment.text}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                  ))}
+                </TableBody>
+              </Table>
             </ScrollArea>
           ) : (
             <div className="task-partial-empty text-sm text-muted-foreground">
@@ -957,8 +1057,9 @@ function TaskDetail({
 
   const resultTimingRows = timingRows(result.timings, _);
   const detectedLanguage = result.detectedLanguage
-    ? localizedLanguageItems.find((item) => item.value === result.detectedLanguage)?.label ??
-      result.detectedLanguage
+    ? (localizedLanguageItems.find(
+        (item) => item.value === result.detectedLanguage,
+      )?.label ?? result.detectedLanguage)
     : t`未提供`;
   const languageSource =
     result.languageSource === "specified"
@@ -993,12 +1094,18 @@ function TaskDetail({
         </span>
       </div>
       <div className="task-result-meta text-sm">
-        <span className="text-muted-foreground"><Trans>時間對齊</Trans></span>
-        <span>{alignmentStatus} · {(alignmentCoverage * 100).toFixed(0)}%</span>
+        <span className="text-muted-foreground">
+          <Trans>時間對齊</Trans>
+        </span>
+        <span>
+          {alignmentStatus} · {(alignmentCoverage * 100).toFixed(0)}%
+        </span>
       </div>
       {outputPaths.length > 0 ? (
         <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
-          <span><Trans>輸出檔案</Trans></span>
+          <span>
+            <Trans>輸出檔案</Trans>
+          </span>
           {outputPaths.map(([format, path]) => (
             <div key={format} className="truncate" title={path}>
               {format}: {path}
@@ -1007,9 +1114,15 @@ function TaskDetail({
         </div>
       ) : null}
       <TabsList className="w-full" variant="line">
-        <TabsTrigger value="transcript"><Trans>逐字稿</Trans></TabsTrigger>
-        <TabsTrigger value="subtitles"><Trans>字幕</Trans></TabsTrigger>
-        <TabsTrigger value="stats"><Trans>統計</Trans></TabsTrigger>
+        <TabsTrigger value="transcript">
+          <Trans>逐字稿</Trans>
+        </TabsTrigger>
+        <TabsTrigger value="subtitles">
+          <Trans>字幕</Trans>
+        </TabsTrigger>
+        <TabsTrigger value="stats">
+          <Trans>統計</Trans>
+        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="transcript" className="min-h-0 flex-1">
@@ -1018,7 +1131,7 @@ function TaskDetail({
           viewportClassName="scroll-fade"
         >
           <div className="task-result-stack">
-            <div className="whitespace-pre-wrap break-words text-sm leading-7">
+            <div className="text-sm leading-7 break-words whitespace-pre-wrap">
               {result.text}
             </div>
           </div>
@@ -1032,22 +1145,33 @@ function TaskDetail({
         >
           <div className="task-result-stack">
             <div className="truncate text-sm text-muted-foreground">
-              {result.srtPath ? <Trans>SRT: {result.srtPath}</Trans> : <Trans>未輸出 SRT</Trans>}
+              {result.srtPath ? (
+                <Trans>SRT: {result.srtPath}</Trans>
+              ) : (
+                <Trans>未輸出 SRT</Trans>
+              )}
             </div>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead><Trans>時間</Trans></TableHead>
-                  <TableHead><Trans>文字</Trans></TableHead>
+                  <TableHead>
+                    <Trans>時間</Trans>
+                  </TableHead>
+                  <TableHead>
+                    <Trans>文字</Trans>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {result.segments.map((segment, index) => (
                   <TableRow key={`${segment.startMs}-${index}`}>
                     <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {formatTimestamp(segment.startMs)} - {formatTimestamp(segment.endMs)}
+                      {formatTimestamp(segment.startMs)} -{" "}
+                      {formatTimestamp(segment.endMs)}
                     </TableCell>
-                    <TableCell className="srt-preview-text">{segment.text}</TableCell>
+                    <TableCell className="srt-preview-text">
+                      {segment.text}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -1063,16 +1187,28 @@ function TaskDetail({
         >
           <div className="task-result-stack">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm font-medium"><Trans>總處理時間</Trans></span>
-              <Badge variant="outline">{formatDuration(result.durationMs)}</Badge>
+              <span className="text-sm font-medium">
+                <Trans>總處理時間</Trans>
+              </span>
+              <Badge variant="outline">
+                {formatDuration(result.durationMs)}
+              </Badge>
             </div>
             <Table className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-1/4"><Trans>項目</Trans></TableHead>
-                  <TableHead className="w-1/4 text-right"><Trans>數值</Trans></TableHead>
-                  <TableHead className="w-1/4"><Trans>項目</Trans></TableHead>
-                  <TableHead className="w-1/4 text-right"><Trans>數值</Trans></TableHead>
+                  <TableHead className="w-1/4">
+                    <Trans>項目</Trans>
+                  </TableHead>
+                  <TableHead className="w-1/4 text-right">
+                    <Trans>數值</Trans>
+                  </TableHead>
+                  <TableHead className="w-1/4">
+                    <Trans>項目</Trans>
+                  </TableHead>
+                  <TableHead className="w-1/4 text-right">
+                    <Trans>數值</Trans>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1082,13 +1218,16 @@ function TaskDetail({
                       <TableCell className="max-w-0 truncate" title={leftLabel}>
                         {leftLabel}
                       </TableCell>
-                      <TableCell className="max-w-0 truncate text-right font-mono tabular-nums text-muted-foreground">
+                      <TableCell className="max-w-0 truncate text-right font-mono text-muted-foreground tabular-nums">
                         {leftValue}
                       </TableCell>
-                      <TableCell className="max-w-0 truncate" title={rightLabel}>
+                      <TableCell
+                        className="max-w-0 truncate"
+                        title={rightLabel}
+                      >
                         {rightLabel}
                       </TableCell>
-                      <TableCell className="max-w-0 truncate text-right font-mono tabular-nums text-muted-foreground">
+                      <TableCell className="max-w-0 truncate text-right font-mono text-muted-foreground tabular-nums">
                         {rightValue}
                       </TableCell>
                     </TableRow>

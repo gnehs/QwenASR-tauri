@@ -50,7 +50,9 @@ export function SettingsPanel({
 }) {
   const { t } = useLingui();
   const [isChangingLocale, setIsChangingLocale] = useState(false);
-  const activeLocale = (i18n.locale in locales ? i18n.locale : "zh-Hant") as Locale;
+  const activeLocale = (
+    i18n.locale in locales ? i18n.locale : "zh-Hant"
+  ) as Locale;
 
   async function handleLocaleChange(value: string | null) {
     if (!value || value === activeLocale) return;
@@ -65,7 +67,10 @@ export function SettingsPanel({
 
   return (
     <div className="settings-grid">
-      <section className="settings-section" aria-labelledby="language-panel-title">
+      <section
+        className="settings-section"
+        aria-labelledby="language-panel-title"
+      >
         <div className="settings-section-header">
           <h2 id="language-panel-title" className="settings-section-title">
             <Trans>介面語言</Trans>

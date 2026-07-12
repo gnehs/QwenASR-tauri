@@ -98,10 +98,7 @@ export function BatchTranscriptionPanel({
             placeholder="預設輸出到各來源檔案所在資料夾"
           />
           <OptionsPanel options={options} onChange={onOptionsChange} />
-          <ScrollArea
-            className="batch-list"
-            viewportClassName="scroll-fade"
-          >
+          <ScrollArea className="batch-list" viewportClassName="scroll-fade">
             {files.length > 0 ? (
               <Table>
                 <TableHeader>
@@ -137,7 +134,9 @@ export function BatchTranscriptionPanel({
                     <ArchiveIcon />
                   </EmptyMedia>
                   <EmptyTitle>尚未加入檔案</EmptyTitle>
-                  <EmptyDescription>選取多個檔案後即可批次轉錄。</EmptyDescription>
+                  <EmptyDescription>
+                    選取多個檔案後即可批次轉錄。
+                  </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
                   <Button variant="outline" onClick={onPickFiles}>

@@ -45,7 +45,9 @@ function prepareMetallib() {
   fs.mkdirSync(path.dirname(bundledMetallibPath), { recursive: true });
   fs.copyFileSync(metallibPath, bundledMetallibPath);
 
-  console.log(`Prepared ${path.relative(repoRoot, bundledMetallibPath)} from ${path.relative(repoRoot, metallibPath)}.`);
+  console.log(
+    `Prepared ${path.relative(repoRoot, bundledMetallibPath)} from ${path.relative(repoRoot, metallibPath)}.`,
+  );
 }
 
 function findMetallibs(targetRoots, profiles) {
@@ -59,11 +61,20 @@ function findMetallibs(targetRoots, profiles) {
       }
 
       for (const entry of fs.readdirSync(buildDir, { withFileTypes: true })) {
-        if (!entry.isDirectory() || !qwenBuildDirPrefixes.some((prefix) => entry.name.startsWith(prefix))) {
+        if (
+          !entry.isDirectory() ||
+          !qwenBuildDirPrefixes.some((prefix) => entry.name.startsWith(prefix))
+        ) {
           continue;
         }
 
-        const metallibPath = path.join(buildDir, entry.name, "out", "lib", "mlx.metallib");
+        const metallibPath = path.join(
+          buildDir,
+          entry.name,
+          "out",
+          "lib",
+          "mlx.metallib",
+        );
         if (fs.existsSync(metallibPath)) {
           candidates.push(metallibPath);
         }

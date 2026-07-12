@@ -5,18 +5,30 @@ import type { TranscriptionProgress } from "@/types/transcription";
 
 function phaseLabel(phase: string, t: ReturnType<typeof useLingui>["t"]) {
   switch (phase) {
-    case "preparing": return t`準備處理音訊`;
-    case "loadingModel": return t`載入模型`;
-    case "loadingAudio": return t`讀取音訊`;
-    case "analyzingAudio": return t`分析語音片段`;
-    case "transcribing": return t`執行語音辨識`;
-    case "transcribingSegments": return t`逐段轉錄`;
-    case "aligningTimestamps": return t`校準時間軸`;
-    case "writingSrt": return t`寫入字幕檔`;
-    case "finalizing": return t`整理轉錄結果`;
-    case "complete": return t`轉錄完成`;
-    case "error": return t`轉錄失敗`;
-    default: return null;
+    case "preparing":
+      return t`準備處理音訊`;
+    case "loadingModel":
+      return t`載入模型`;
+    case "loadingAudio":
+      return t`讀取音訊`;
+    case "analyzingAudio":
+      return t`分析語音片段`;
+    case "transcribing":
+      return t`執行語音辨識`;
+    case "transcribingSegments":
+      return t`逐段轉錄`;
+    case "aligningTimestamps":
+      return t`校準時間軸`;
+    case "writingSrt":
+      return t`寫入字幕檔`;
+    case "finalizing":
+      return t`整理轉錄結果`;
+    case "complete":
+      return t`轉錄完成`;
+    case "error":
+      return t`轉錄失敗`;
+    default:
+      return null;
   }
 }
 
@@ -124,9 +136,15 @@ export function TranscriptionProgressPanel({
       </div>
 
       <div className="transcription-progress-foot">
-        <span><Trans>已用 {formatDuration(elapsedMs)}</Trans></span>
+        <span>
+          <Trans>已用 {formatDuration(elapsedMs)}</Trans>
+        </span>
         <span className="truncate" title={processedSpeech ?? undefined}>
-          {processedSpeech ? <Trans>已處理 {processedSpeech}</Trans> : <Trans>正在估算語音量</Trans>}
+          {processedSpeech ? (
+            <Trans>已處理 {processedSpeech}</Trans>
+          ) : (
+            <Trans>正在估算語音量</Trans>
+          )}
         </span>
       </div>
     </section>

@@ -67,7 +67,9 @@ export function SingleTranscriptionPanel({
           </button>
           <FieldGroup>
             <Field>
-              <FieldLabel htmlFor="single-output-dir">SRT 輸出資料夾</FieldLabel>
+              <FieldLabel htmlFor="single-output-dir">
+                SRT 輸出資料夾
+              </FieldLabel>
               <div className="flex gap-2">
                 <Input
                   id="single-output-dir"

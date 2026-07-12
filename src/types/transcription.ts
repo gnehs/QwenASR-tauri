@@ -111,11 +111,7 @@ export type OptionsState = {
 };
 
 export type TaskStatus =
-  | "queued"
-  | "running"
-  | "completed"
-  | "failed"
-  | "cancelled";
+  "queued" | "running" | "completed" | "failed" | "cancelled";
 
 export type TranscriptionTask = {
   id: string;

@@ -62,11 +62,11 @@ The app first remuxes audio locally before transcription, and cleans temporary f
 
 ## Which model to use
 
-| Model | Approx. download size | Suggested use |
-| --- | ---: | --- |
-| Qwen3-ASR 0.6B | 1.9 GB | Recommended for first-time users; suitable for most recordings and batch jobs. |
-| Qwen3-ASR 1.7B | 4.7 GB | Better accuracy for noisy or complex audio. |
-| Qwen3 ForcedAligner 0.6B | 1.8 GB | Required only when exporting SRT; app will suggest when needed. |
+| Model                    | Approx. download size | Suggested use                                                                  |
+| ------------------------ | --------------------: | ------------------------------------------------------------------------------ |
+| Qwen3-ASR 0.6B           |                1.9 GB | Recommended for first-time users; suitable for most recordings and batch jobs. |
+| Qwen3-ASR 1.7B           |                4.7 GB | Better accuracy for noisy or complex audio.                                    |
+| Qwen3 ForcedAligner 0.6B |                1.8 GB | Required only when exporting SRT; app will suggest when needed.                |
 
 Downloaded models are stored in your Mac application data folder, not in the checked-out project directory. These are large files; ensure enough disk space and stable connectivity when downloading.
 

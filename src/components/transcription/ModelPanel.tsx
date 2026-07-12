@@ -105,9 +105,14 @@ export function ModelPanel({
               <EmptyMedia variant="icon">
                 <DownloadIcon />
               </EmptyMedia>
-              <EmptyTitle><Trans>尚未取得模型清單</Trans></EmptyTitle>
+              <EmptyTitle>
+                <Trans>尚未取得模型清單</Trans>
+              </EmptyTitle>
               <EmptyDescription>
-                <Trans>請重新整理模型與工具狀態；在 Tauri app 內會從後端讀取支援模型。</Trans>
+                <Trans>
+                  請重新整理模型與工具狀態；在 Tauri app
+                  內會從後端讀取支援模型。
+                </Trans>
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
@@ -120,8 +125,14 @@ export function ModelPanel({
         ) : (
           <div className="model-list">
             {models.map((model) => {
-              const comparisonMessage = modelComparisonMessages[model.id as keyof typeof modelComparisonMessages];
-              const descriptionMessage = modelDescriptionMessages[model.id as keyof typeof modelDescriptionMessages];
+              const comparisonMessage =
+                modelComparisonMessages[
+                  model.id as keyof typeof modelComparisonMessages
+                ];
+              const descriptionMessage =
+                modelDescriptionMessages[
+                  model.id as keyof typeof modelDescriptionMessages
+                ];
               const activeDownloadProgress =
                 isDownloading && downloadProgress?.modelId === model.id
                   ? downloadProgress
@@ -141,13 +152,19 @@ export function ModelPanel({
                     <CardTitle className="model-card-title">
                       <span>{model.title}</span>
                       {model.recommended ? (
-                        <Badge variant="secondary"><Trans>建議</Trans></Badge>
+                        <Badge variant="secondary">
+                          <Trans>建議</Trans>
+                        </Badge>
                       ) : model.role === "forcedAlignment" ? (
-                        <Badge variant="outline"><Trans>字幕對齊</Trans></Badge>
+                        <Badge variant="outline">
+                          <Trans>字幕對齊</Trans>
+                        </Badge>
                       ) : null}
                     </CardTitle>
                     <CardDescription>
-                      {descriptionMessage ? _(descriptionMessage) : model.description}
+                      {descriptionMessage
+                        ? _(descriptionMessage)
+                        : model.description}
                     </CardDescription>
                   </CardHeader>
 
@@ -164,7 +181,13 @@ export function ModelPanel({
                       <div className="model-card-meta">
                         <span className="model-card-meta-item">
                           <HardDriveIcon className="size-4" />
-                          <Trans>下載大小{model.sizeHint.replace(/^~\s*/, `${_(approximateLabel)} `)}</Trans>
+                          <Trans>
+                            下載大小
+                            {model.sizeHint.replace(
+                              /^~\s*/,
+                              `${_(approximateLabel)} `,
+                            )}
+                          </Trans>
                         </span>
                         {isActiveDownload ? (
                           <span className="model-card-meta-item model-card-status">
@@ -206,13 +229,15 @@ export function ModelPanel({
                             <Trash2Icon data-icon="inline-start" />
                             <Trans>移除</Trans>
                           </DialogTrigger>
-                          <DialogContent
-                            showCloseButton={!isDeletingThisModel}
-                          >
+                          <DialogContent showCloseButton={!isDeletingThisModel}>
                             <DialogHeader>
-                              <DialogTitle><Trans>移除 {model.title}</Trans></DialogTitle>
+                              <DialogTitle>
+                                <Trans>移除 {model.title}</Trans>
+                              </DialogTitle>
                               <DialogDescription>
-                                <Trans>這會移除已下載的模型檔案；之後需重新下載才能使用此模型。</Trans>
+                                <Trans>
+                                  這會移除已下載的模型檔案；之後需重新下載才能使用此模型。
+                                </Trans>
                               </DialogDescription>
                             </DialogHeader>
                             <DialogFooter>
@@ -263,23 +288,25 @@ export function ModelPanel({
                         </Progress>
                         <div className="model-download-meta">
                           <span className="truncate">
-                            {activeDownloadProgress.currentFile ?? <Trans>準備下載</Trans>}
+                            {activeDownloadProgress.currentFile ?? (
+                              <Trans>準備下載</Trans>
+                            )}
                           </span>
                           <span>
-                            <Trans>{activeDownloadProgress.fileIndex}/{activeDownloadProgress.totalFiles} 個檔案</Trans>
+                            <Trans>
+                              {activeDownloadProgress.fileIndex}/
+                              {activeDownloadProgress.totalFiles} 個檔案
+                            </Trans>
                           </span>
                           <span>
                             {formatBytes(
                               activeDownloadProgress.fileBytesCompleted,
-                            )} /{" "}
-                            {formatBytes(
-                              activeDownloadProgress.fileTotalBytes,
-                            )}
+                            )}{" "}
+                            /{" "}
+                            {formatBytes(activeDownloadProgress.fileTotalBytes)}
                           </span>
                           <span>
-                            {formatBytes(
-                              downloadMovingAverageSpeedBytesPerSec,
-                            )}
+                            {formatBytes(downloadMovingAverageSpeedBytesPerSec)}
                             /s
                           </span>
                         </div>

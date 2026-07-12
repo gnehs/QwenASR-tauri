@@ -106,9 +106,7 @@ function readStoredTranscriptionOptions(): OptionsState {
         ? stored.context
         : defaultOptions.context;
     const writeTxt =
-      typeof stored.writeTxt === "boolean"
-        ? stored.writeTxt
-        : false;
+      typeof stored.writeTxt === "boolean" ? stored.writeTxt : false;
     const segmentByPunctuation =
       typeof stored.segmentByPunctuation === "boolean"
         ? stored.segmentByPunctuation
@@ -173,8 +171,8 @@ function buildOptionsPayload(task: TranscriptionTask) {
 function isInvokeErrorKind(error: unknown, kind: string) {
   return Boolean(
     error &&
-      typeof error === "object" &&
-      (error as { kind?: unknown }).kind === kind,
+    typeof error === "object" &&
+    (error as { kind?: unknown }).kind === kind,
   );
 }
 
@@ -399,136 +397,139 @@ export function useTranscriptionWorkspace() {
     [defaultModelId, options, outputDir, t],
   );
 
-  const runQueuedTask = useCallback(async (task: TranscriptionTask) => {
-    runningTaskIdRef.current = task.id;
-    setTranscriptionProgress(null);
-    setTasks((current) =>
-      current.map((item) =>
-        item.id === task.id
-          ? {
-              ...item,
-              status: "running",
-              error: null,
-              progress: null,
-              progressUpdatedAt: null,
-              result: null,
-              startedAt: Date.now(),
-              completedAt: null,
-            }
-          : item,
-      ),
-    );
-
-    try {
-      const onProgress = new Channel<TranscriptionProgress>();
-      onProgress.onmessage = (progress) => {
-        if (runningTaskIdRef.current !== task.id) return;
-
-        const progressUpdatedAt = Date.now();
-        setTranscriptionProgress((previous) => ({
-          ...progress,
-          partialSegments:
-            progress.partialSegments ?? previous?.partialSegments ?? null,
-        }));
-        setTasks((current) =>
-          current.map((item) => {
-            if (item.id !== task.id) return item;
-
-            const nextProgress = {
-              ...progress,
-              partialSegments:
-                progress.partialSegments ??
-                item.progress?.partialSegments ??
-                null,
-            };
-            return {
-              ...item,
-              progress: nextProgress,
-              progressUpdatedAt,
-            };
-          }),
-        );
-      };
-
-      // A queued task owns the worker until its complete command response arrives.
-      // The batch command intentionally runs ASR for later files before it finalizes
-      // the current file, which does not match the task queue's end-to-end ordering.
-      const result = await invoke<TranscriptionResult>("transcribe_file", {
-        request: {
-          taskId: task.id,
-          audioPath: task.audioPath,
-          options: buildOptionsPayload(task),
-        },
-        onProgress,
-      });
-
+  const runQueuedTask = useCallback(
+    async (task: TranscriptionTask) => {
+      runningTaskIdRef.current = task.id;
+      setTranscriptionProgress(null);
       setTasks((current) =>
         current.map((item) =>
           item.id === task.id
             ? {
                 ...item,
-                status: "completed",
+                status: "running",
+                error: null,
                 progress: null,
                 progressUpdatedAt: null,
-                result,
-                completedAt: Date.now(),
+                result: null,
+                startedAt: Date.now(),
+                completedAt: null,
               }
             : item,
         ),
       );
-      toast.success(t`${basename(task.audioPath)} 轉錄完成`);
-      void sendTaskNotification(
-        task,
-        result,
-        t`轉錄完成`,
-        t`已完成`,
-        t`，已輸出`,
-      );
-    } catch (error) {
-      if (isInvokeErrorKind(error, "cancelled")) {
+
+      try {
+        const onProgress = new Channel<TranscriptionProgress>();
+        onProgress.onmessage = (progress) => {
+          if (runningTaskIdRef.current !== task.id) return;
+
+          const progressUpdatedAt = Date.now();
+          setTranscriptionProgress((previous) => ({
+            ...progress,
+            partialSegments:
+              progress.partialSegments ?? previous?.partialSegments ?? null,
+          }));
+          setTasks((current) =>
+            current.map((item) => {
+              if (item.id !== task.id) return item;
+
+              const nextProgress = {
+                ...progress,
+                partialSegments:
+                  progress.partialSegments ??
+                  item.progress?.partialSegments ??
+                  null,
+              };
+              return {
+                ...item,
+                progress: nextProgress,
+                progressUpdatedAt,
+              };
+            }),
+          );
+        };
+
+        // A queued task owns the worker until its complete command response arrives.
+        // The batch command intentionally runs ASR for later files before it finalizes
+        // the current file, which does not match the task queue's end-to-end ordering.
+        const result = await invoke<TranscriptionResult>("transcribe_file", {
+          request: {
+            taskId: task.id,
+            audioPath: task.audioPath,
+            options: buildOptionsPayload(task),
+          },
+          onProgress,
+        });
+
         setTasks((current) =>
           current.map((item) =>
             item.id === task.id
               ? {
                   ...item,
-                  status: "cancelled",
+                  status: "completed",
                   progress: null,
                   progressUpdatedAt: null,
-                  error: null,
+                  result,
                   completedAt: Date.now(),
                 }
               : item,
           ),
         );
-        toast.info(t`${basename(task.audioPath)} 已終止`);
-      } else {
-        const message = formatInvokeError(error);
-        setTasks((current) =>
-          current.map((item) =>
-            item.id === task.id
-              ? {
-                  ...item,
-                  status: "failed",
-                  error: message,
-                  progressUpdatedAt: null,
-                  completedAt: Date.now(),
-                }
-              : item,
-          ),
+        toast.success(t`${basename(task.audioPath)} 轉錄完成`);
+        void sendTaskNotification(
+          task,
+          result,
+          t`轉錄完成`,
+          t`已完成`,
+          t`，已輸出`,
         );
-        toast.error(t`${basename(task.audioPath)} 轉錄失敗`, {
-          description: message,
-        });
+      } catch (error) {
+        if (isInvokeErrorKind(error, "cancelled")) {
+          setTasks((current) =>
+            current.map((item) =>
+              item.id === task.id
+                ? {
+                    ...item,
+                    status: "cancelled",
+                    progress: null,
+                    progressUpdatedAt: null,
+                    error: null,
+                    completedAt: Date.now(),
+                  }
+                : item,
+            ),
+          );
+          toast.info(t`${basename(task.audioPath)} 已終止`);
+        } else {
+          const message = formatInvokeError(error);
+          setTasks((current) =>
+            current.map((item) =>
+              item.id === task.id
+                ? {
+                    ...item,
+                    status: "failed",
+                    error: message,
+                    progressUpdatedAt: null,
+                    completedAt: Date.now(),
+                  }
+                : item,
+            ),
+          );
+          toast.error(t`${basename(task.audioPath)} 轉錄失敗`, {
+            description: message,
+          });
+        }
+      } finally {
+        runningTaskIdRef.current = null;
+        if (cancellingTaskIdRef.current === task.id) {
+          cancellingTaskIdRef.current = null;
+          setCancellingTaskId(null);
+        }
+        setTranscriptionProgress(null);
       }
-    } finally {
-      runningTaskIdRef.current = null;
-      if (cancellingTaskIdRef.current === task.id) {
-        cancellingTaskIdRef.current = null;
-        setCancellingTaskId(null);
-      }
-      setTranscriptionProgress(null);
-    }
-  }, [t]);
+    },
+    [t],
+  );
 
   useEffect(() => {
     refreshRuntime();
@@ -565,10 +566,7 @@ export function useTranscriptionWorkspace() {
 
     getCurrentWebview()
       .onDragDropEvent((event) => {
-        if (
-          event.payload.type === "enter" ||
-          event.payload.type === "over"
-        ) {
+        if (event.payload.type === "enter" || event.payload.type === "over") {
           setIsDraggingFiles(true);
           return;
         }

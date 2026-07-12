@@ -45,7 +45,9 @@ export function AppToolbar({
         <div className="window-toolbar-actions">
           <div className="window-toolbar-primary-actions">{actions}</div>
           {!ffmpeg.available ? (
-            <Badge variant="destructive"><Trans>缺少 FFmpeg</Trans></Badge>
+            <Badge variant="destructive">
+              <Trans>缺少 FFmpeg</Trans>
+            </Badge>
           ) : null}
         </div>
       ) : null}
