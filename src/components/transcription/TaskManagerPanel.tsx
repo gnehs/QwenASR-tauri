@@ -91,7 +91,6 @@ import {
   formatTimestamp,
   formatTiming,
 } from "@/lib/format";
-import { cn } from "@/lib/utils";
 import type {
   DownloadProgress,
   ModelStatus,
@@ -315,18 +314,15 @@ export function TaskManagerPanel({
 
   return (
     <>
-      <div className={cn("task-workspace", isDraggingFiles && "is-dragging")}>
-        <section className="task-list-panel" aria-label={t`轉錄任務`}>
-          <div className="task-list-content">
-            <ScrollArea
-              className={cn(
-                "task-table-wrap",
-                tasks.length === 0 && "is-empty",
-              )}
-              viewportClassName="scroll-fade"
-            >
+      <div className="flex h-full min-h-0 flex-col gap-3">
+        <section
+          className="flex min-h-0 flex-1 flex-col gap-3"
+          aria-label={t`轉錄任務`}
+        >
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
+            <ScrollArea className="relative min-h-0 flex-1">
               {tasks.length > 0 ? (
-                <Table className="task-table">
+                <Table className="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4 [&_th:first-child]:pl-4 [&_th:last-child]:pr-4">
                   <TableHeader>
                     <TableRow>
                       <TableHead>
@@ -354,11 +350,11 @@ export function TaskManagerPanel({
                       return (
                         <TableRow
                           key={task.id}
-                          className="task-row"
+                          className="cursor-pointer data-[selected=true]:bg-primary/5"
                           data-selected={selectedTask?.id === task.id}
                           onClick={() => setSelectedTaskId(task.id)}
                         >
-                          <TableCell className="task-name-cell">
+                          <TableCell className="w-[42%] max-w-0 max-[720px]:min-w-[180px]">
                             <div className="min-w-0">
                               <div className="truncate font-medium">
                                 {basename(task.audioPath)}
@@ -373,19 +369,19 @@ export function TaskManagerPanel({
                               {statusLabel(task.status, _)}
                             </Badge>
                           </TableCell>
-                          <TableCell className="task-progress-cell">
-                            <div className="task-progress-stack">
+                          <TableCell className="min-w-[170px]">
+                            <div className="flex min-w-0 flex-col gap-1.5">
                               <Progress
                                 value={percent}
                                 aria-label={t`${basename(task.audioPath)} 進度`}
                               />
-                              <div className="task-progress-meta">
+                              <div className="flex min-w-0 items-center justify-between gap-2.5 text-xs/none text-muted-foreground tabular-nums">
                                 <span>{percent.toFixed(0)}%</span>
                                 <span>{taskEtaLabel(task, etaTick)}</span>
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="task-options-cell">
+                          <TableCell className="max-w-[180px] max-[720px]:min-w-[180px]">
                             <div className="truncate">{task.modelTitle}</div>
                             <div className="truncate text-xs text-muted-foreground">
                               {taskLanguageLabel(
@@ -396,7 +392,7 @@ export function TaskManagerPanel({
                             </div>
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="task-row-actions">
+                            <div className="flex items-center justify-end gap-2">
                               {task.status === "failed" ? (
                                 <Button
                                   variant="ghost"
@@ -456,13 +452,16 @@ export function TaskManagerPanel({
                   </TableBody>
                 </Table>
               ) : (
-                <Empty className="task-empty-state">
-                  <div className="task-empty-main">
+                <Empty className="h-full min-h-[360px] justify-between gap-6 px-6 pb-6">
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-4">
                     <EmptyHeader>
-                      <EmptyMedia variant="icon">
+                      <EmptyMedia
+                        variant="icon"
+                        className="size-14 rounded-xl [&_svg]:size-7"
+                      >
                         <ArchiveIcon />
                       </EmptyMedia>
-                      <EmptyTitle>
+                      <EmptyTitle className="text-2xl leading-tight font-semibold">
                         <Trans>尚無任務</Trans>
                       </EmptyTitle>
                       <EmptyDescription>
@@ -483,7 +482,7 @@ export function TaskManagerPanel({
                       </Button>
                     </EmptyContent>
                   </div>
-                  <p className="task-empty-supported">
+                  <p className="m-0 text-center text-sm/relaxed text-muted-foreground">
                     wav、mp3、m4a、mp4、mov、mkv、webm
                   </p>
                 </Empty>
@@ -528,7 +527,7 @@ export function TaskManagerPanel({
             </SheetDescription>
           </SheetHeader>
           <Separator />
-          <div className="task-detail-content">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden p-3.5 px-4 pb-4">
             {selectedTask ? (
               <TaskDetail
                 now={etaTick}
@@ -541,7 +540,7 @@ export function TaskManagerPanel({
       </Sheet>
 
       <Dialog open={isTaskDialogOpen} onOpenChange={onTaskDialogOpenChange}>
-        <DialogContent className="task-dialog">
+        <DialogContent className="w-[min(680px,calc(100vw-2rem))] max-w-[min(680px,calc(100vw-2rem))]">
           <DialogHeader>
             <DialogTitle>
               <Trans>新增轉錄任務</Trans>
@@ -554,7 +553,7 @@ export function TaskManagerPanel({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="task-dialog-body scroll-fade">
+          <div className="flex max-h-[min(620px,calc(100vh-220px))] min-h-0 flex-col gap-4 overflow-x-hidden overflow-y-auto p-1">
             <FieldGroup>
               <Field>
                 <FieldLabel>
@@ -791,11 +790,14 @@ export function TaskManagerPanel({
             <Separator />
 
             <ScrollArea
-              className="task-draft-files"
-              viewportClassName="scroll-fade"
+              className="h-40 max-w-full min-w-0 rounded-lg border"
+              viewportClassName="overflow-x-hidden"
             >
               {taskDraft.files.map((file) => (
-                <div key={file} className="task-draft-file">
+                <div
+                  key={file}
+                  className="flex w-full max-w-full min-w-0 items-center gap-2 overflow-hidden border-b p-2 text-sm last:border-b-0"
+                >
                   <FileAudioIcon />
                   <span className="truncate">{basename(file)}</span>
                 </div>
@@ -835,7 +837,7 @@ export function TaskManagerPanel({
         disablePointerDismissal={isConfirmingTasks || isDownloading}
       >
         <DialogContent
-          className="task-download-dialog"
+          className="w-[min(460px,calc(100vw-2rem))] max-w-[min(460px,calc(100vw-2rem))]"
           showCloseButton={!isConfirmingTasks && !isDownloading}
         >
           <DialogHeader>
@@ -862,10 +864,10 @@ export function TaskManagerPanel({
               <AlertDescription>{modelDownloadError}</AlertDescription>
             </Alert>
           ) : (
-            <div className="task-model-download">
+            <div className="flex min-w-0 flex-col gap-3.5 py-1">
               <Progress
                 aria-label={t`模型下載整體進度`}
-                className="task-model-download-progress"
+                className="gap-3"
                 value={taskModelDownloadPercent}
               >
                 <ProgressLabel className="min-w-0 flex-1 truncate font-normal text-muted-foreground">
@@ -997,7 +999,7 @@ function TaskDetail({
 
   if (task.status === "running") {
     return (
-      <div className="task-running-detail">
+      <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-3">
         <TranscriptionProgressPanel
           now={now}
           progress={progress}
@@ -1005,10 +1007,10 @@ function TaskDetail({
         />
         <Separator />
         <section
-          className="task-partial-result"
+          className="flex min-h-0 min-w-0 flex-1 flex-col gap-2.5"
           aria-labelledby="live-transcript-title"
         >
-          <div className="task-partial-result-head">
+          <div className="flex min-w-0 items-start justify-between gap-3">
             <div className="min-w-0">
               <div id="live-transcript-title" className="text-sm font-medium">
                 <Trans>即時逐字稿</Trans>
@@ -1020,8 +1022,8 @@ function TaskDetail({
           </div>
           {partialSegments.length > 0 ? (
             <ScrollArea
-              className="task-partial-scroll"
-              viewportClassName="scroll-fade"
+              className="min-h-0 flex-1 overflow-auto scroll-auto"
+              viewportClassName="overflow-x-hidden"
               viewportRef={liveTranscriptViewportRef}
             >
               <Table>
@@ -1035,7 +1037,7 @@ function TaskDetail({
                 <TableBody>
                   {partialSegments.map((segment, index) => (
                     <TableRow key={`${segment.startMs}-${index}`}>
-                      <TableCell className="srt-preview-text align-top">
+                      <TableCell className="align-top leading-relaxed break-words whitespace-pre-wrap">
                         {segment.text}
                       </TableCell>
                     </TableRow>
@@ -1044,7 +1046,7 @@ function TaskDetail({
               </Table>
             </ScrollArea>
           ) : (
-            <div className="task-partial-empty text-sm text-muted-foreground">
+            <div className="grid min-h-36 place-items-center text-sm text-muted-foreground">
               <Trans>辨識到語音後，逐字稿會顯示在這裡。</Trans>
             </div>
           )}
@@ -1086,14 +1088,14 @@ function TaskDetail({
   ].filter(([, path]) => path) as [string, string][];
 
   return (
-    <Tabs defaultValue="transcript" className="min-h-0 flex-1">
-      <div className="task-result-meta text-sm">
+    <Tabs defaultValue="transcript" className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-w-0 items-center justify-between gap-3 text-sm max-[720px]:flex-col max-[720px]:items-start">
         <span className="text-muted-foreground">{languageLabel}</span>
         <span className="truncate" title={detectedLanguage}>
           {detectedLanguage} · {languageSource}
         </span>
       </div>
-      <div className="task-result-meta text-sm">
+      <div className="flex min-w-0 items-center justify-between gap-3 text-sm max-[720px]:flex-col max-[720px]:items-start">
         <span className="text-muted-foreground">
           <Trans>時間對齊</Trans>
         </span>
@@ -1126,11 +1128,8 @@ function TaskDetail({
       </TabsList>
 
       <TabsContent value="transcript" className="min-h-0 flex-1">
-        <ScrollArea
-          className="task-result-scroll"
-          viewportClassName="scroll-fade"
-        >
-          <div className="task-result-stack">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex min-w-0 flex-col gap-3 p-0.5 pr-2">
             <div className="text-sm leading-7 break-words whitespace-pre-wrap">
               {result.text}
             </div>
@@ -1139,11 +1138,8 @@ function TaskDetail({
       </TabsContent>
 
       <TabsContent value="subtitles" className="min-h-0 flex-1">
-        <ScrollArea
-          className="task-result-scroll"
-          viewportClassName="scroll-fade"
-        >
-          <div className="task-result-stack">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex min-w-0 flex-col gap-3 p-0.5 pr-2">
             <div className="truncate text-sm text-muted-foreground">
               {result.srtPath ? (
                 <Trans>SRT: {result.srtPath}</Trans>
@@ -1169,7 +1165,7 @@ function TaskDetail({
                       {formatTimestamp(segment.startMs)} -{" "}
                       {formatTimestamp(segment.endMs)}
                     </TableCell>
-                    <TableCell className="srt-preview-text">
+                    <TableCell className="leading-relaxed break-words whitespace-pre-wrap">
                       {segment.text}
                     </TableCell>
                   </TableRow>
@@ -1181,11 +1177,8 @@ function TaskDetail({
       </TabsContent>
 
       <TabsContent value="stats" className="min-h-0 flex-1">
-        <ScrollArea
-          className="task-result-scroll"
-          viewportClassName="scroll-fade"
-        >
-          <div className="task-result-stack">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="flex min-w-0 flex-col gap-3 p-0.5 pr-2">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-medium">
                 <Trans>總處理時間</Trans>

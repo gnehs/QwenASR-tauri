@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { ModelPanel } from "@/components/transcription/ModelPanel";
 import { RuntimePanel } from "@/components/transcription/RuntimePanel";
+import { SettingsSection } from "@/components/transcription/SettingsSection";
 import { activateLocale, locales, type Locale } from "@/i18n";
 import type {
   DownloadProgress,
@@ -66,54 +67,45 @@ export function SettingsPanel({
   }
 
   return (
-    <div className="settings-grid">
-      <section
-        className="settings-section"
-        aria-labelledby="language-panel-title"
+    <div className="flex min-h-0 flex-col gap-6">
+      <SettingsSection
+        id="language-panel-title"
+        title={<Trans>介面語言</Trans>}
+        description={<Trans>選擇 QwenASR Studio 使用的介面語言。</Trans>}
       >
-        <div className="settings-section-header">
-          <h2 id="language-panel-title" className="settings-section-title">
-            <Trans>介面語言</Trans>
-          </h2>
-          <p className="settings-section-description">
-            <Trans>選擇 QwenASR Studio 使用的介面語言。</Trans>
-          </p>
-        </div>
-        <div className="settings-section-content">
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="interface-language">
-                <Trans>語言</Trans>
-              </FieldLabel>
-              <Select
-                value={activeLocale}
-                disabled={isChangingLocale}
-                onValueChange={handleLocaleChange}
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="interface-language">
+              <Trans>語言</Trans>
+            </FieldLabel>
+            <Select
+              value={activeLocale}
+              disabled={isChangingLocale}
+              onValueChange={handleLocaleChange}
+            >
+              <SelectTrigger
+                id="interface-language"
+                className="w-full"
+                aria-label={t`介面語言`}
               >
-                <SelectTrigger
-                  id="interface-language"
-                  className="w-full"
-                  aria-label={t`介面語言`}
-                >
-                  <SelectValue>{locales[activeLocale]}</SelectValue>
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    {Object.entries(locales).map(([value, label]) => (
-                      <SelectItem key={value} value={value}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                <Trans>變更後會立即套用並自動保存。</Trans>
-              </FieldDescription>
-            </Field>
-          </FieldGroup>
-        </div>
-      </section>
+                <SelectValue>{locales[activeLocale]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {Object.entries(locales).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FieldDescription>
+              <Trans>變更後會立即套用並自動保存。</Trans>
+            </FieldDescription>
+          </Field>
+        </FieldGroup>
+      </SettingsSection>
       <ModelPanel
         models={models}
         downloadProgress={downloadProgress}

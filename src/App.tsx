@@ -21,7 +21,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SettingsPanel } from "@/components/transcription/SettingsPanel";
 import { TaskManagerPanel } from "@/components/transcription/TaskManagerPanel";
 import { useTranscriptionWorkspace } from "@/hooks/use-transcription-workspace";
-import "./App.css";
 
 function App() {
   const workspace = useTranscriptionWorkspace();
@@ -34,19 +33,23 @@ function App() {
 
   return (
     <TooltipProvider>
-      <main className="app-shell">
+      <main className="isolate min-h-screen bg-background text-foreground">
         <Toaster richColors closeButton position="top-right" />
-        <section className="app-window">
+        <section className="flex h-screen min-h-0 flex-col overflow-hidden bg-background">
           {workspace.isDraggingFiles ? (
-            <div className="file-drop-overlay" role="status" aria-live="polite">
-              <div className="file-drop-overlay-content">
-                <div className="file-drop-overlay-icon">
-                  <FileUpIcon />
+            <div
+              className="pointer-events-none fixed inset-3 z-50 grid place-items-center rounded-xl border-2 border-dashed border-primary/40 bg-primary/10 ring-1 ring-primary/20"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex flex-col items-center gap-2 text-center">
+                <div className="mb-2 grid size-16 place-items-center rounded-lg bg-primary/10 text-primary">
+                  <FileUpIcon className="size-8" />
                 </div>
-                <strong>
+                <strong className="font-sans text-2xl leading-tight font-semibold">
                   <Trans>把檔案拖到這裡</Trans>
                 </strong>
-                <span>
+                <span className="text-sm text-muted-foreground">
                   <Trans>放開即可建立轉錄任務</Trans>
                 </span>
               </div>
@@ -83,7 +86,7 @@ function App() {
                 </SheetTrigger>
                 <SheetContent
                   side="right"
-                  className="settings-sheet data-[side=right]:w-[min(560px,100vw)] data-[side=right]:sm:max-w-[min(560px,100vw)]"
+                  className="data-[side=right]:w-[min(560px,100vw)] data-[side=right]:sm:max-w-[min(560px,100vw)]"
                 >
                   <SheetHeader>
                     <SheetTitle>
@@ -93,7 +96,7 @@ function App() {
                       <Trans>管理模型與相關工具。</Trans>
                     </SheetDescription>
                   </SheetHeader>
-                  <div className="settings-sheet-body scroll-fade">
+                  <div className="min-h-0 flex-1 overflow-y-auto p-2 pb-6 sm:px-4">
                     <SettingsPanel
                       models={workspace.models}
                       downloadProgress={workspace.downloadProgress}
@@ -113,7 +116,7 @@ function App() {
               </Sheet>
             }
           />
-          <div className="main-content is-task-view">
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
             <TaskManagerPanel
               tasks={workspace.tasks}
               models={workspace.transcriptionModels}

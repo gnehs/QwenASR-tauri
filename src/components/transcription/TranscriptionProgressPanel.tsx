@@ -1,6 +1,7 @@
 import { Progress } from "@/components/ui/progress";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { formatDuration } from "@/lib/format";
+import { cn } from "@/lib/utils";
 import type { TranscriptionProgress } from "@/types/transcription";
 
 function phaseLabel(phase: string, t: ReturnType<typeof useLingui>["t"]) {
@@ -85,8 +86,11 @@ export function TranscriptionProgressPanel({
         )}`
       : null;
   return (
-    <section className="transcription-progress" aria-label={t`轉錄進度摘要`}>
-      <div className="transcription-progress-head">
+    <section
+      className="flex w-full min-w-0 flex-col gap-3 text-left"
+      aria-label={t`轉錄進度摘要`}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-3 max-[720px]:flex-col max-[720px]:items-start">
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">
             <Trans>目前進度</Trans>
@@ -95,7 +99,7 @@ export function TranscriptionProgressPanel({
             {currentMessage}
           </div>
         </div>
-        <div className="transcription-progress-stat">
+        <div className="flex shrink-0 flex-col items-end gap-0 max-[720px]:items-start">
           <strong className="text-2xl font-medium tabular-nums">
             {percent.toFixed(0)}%
           </strong>
@@ -107,35 +111,41 @@ export function TranscriptionProgressPanel({
 
       <Progress
         aria-label={t`轉錄進度 ${percent.toFixed(0)}%`}
-        className="transcription-progress-bar"
+        className="gap-3 [&_[data-slot=progress-indicator]]:bg-primary [&_[data-slot=progress-track]]:h-2"
         value={percent}
       />
 
       <div
-        className="transcription-stage-list"
+        className="grid grid-cols-4 gap-2 py-2.5"
         aria-label={t`處理階段`}
         role="list"
       >
         {stages.map((stage, index) => (
           <div
             aria-current={index === activeStage ? "step" : undefined}
-            className={
-              index < activeStage
-                ? "is-complete"
-                : index === activeStage
-                  ? "is-active"
-                  : undefined
-            }
+            className={cn(
+              "flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
+              index <= activeStage && "text-foreground",
+              index === activeStage && "font-medium",
+            )}
             key={stage}
             role="listitem"
           >
-            <span className="transcription-stage-dot" aria-hidden="true" />
+            <span
+              className={cn(
+                "block size-2 shrink-0 rounded-full border border-border bg-background",
+                index < activeStage && "border-foreground bg-foreground",
+                index === activeStage &&
+                  "border-primary bg-primary ring-4 ring-primary/20",
+              )}
+              aria-hidden="true"
+            />
             <span>{stage}</span>
           </div>
         ))}
       </div>
 
-      <div className="transcription-progress-foot">
+      <div className="flex min-w-0 items-center justify-between gap-3 text-xs text-muted-foreground tabular-nums">
         <span>
           <Trans>已用 {formatDuration(elapsedMs)}</Trans>
         </span>

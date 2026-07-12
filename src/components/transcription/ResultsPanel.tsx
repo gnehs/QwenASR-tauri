@@ -64,7 +64,7 @@ export function ResultsPanel({
           </CardAction>
         ) : null}
       </CardHeader>
-      <CardContent className="results-content">
+      <CardContent className="min-h-0 flex-1 max-[1120px]:min-h-[520px]">
         {isTranscribing ? (
           <Empty>
             <EmptyHeader>
@@ -89,10 +89,10 @@ export function ResultsPanel({
             </EmptyHeader>
           </Empty>
         ) : (
-          <ScrollArea className="h-full" viewportClassName="scroll-fade">
+          <ScrollArea className="h-full">
             <div className="flex flex-col gap-4 pr-3">
-              <div className="result-summary">
-                <FileTextIcon />
+              <div className="flex min-w-0 items-center gap-3">
+                <FileTextIcon className="shrink-0 text-primary" />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium">
                     {basename(latest.audioPath)}
@@ -171,7 +171,7 @@ export function ResultsPanel({
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {formatTimestamp(segment.startMs)}
                       </TableCell>
-                      <TableCell className="srt-preview-text">
+                      <TableCell className="leading-relaxed break-words whitespace-pre-wrap">
                         {segment.text}
                       </TableCell>
                     </TableRow>
@@ -185,7 +185,10 @@ export function ResultsPanel({
                     <Trans>批次結果</Trans>
                   </div>
                   {results.map((result) => (
-                    <div key={result.audioPath} className="result-row">
+                    <div
+                      key={result.audioPath}
+                      className="flex min-w-0 items-center justify-between gap-3 rounded-md bg-muted px-2.5 py-2 text-sm"
+                    >
                       <span className="truncate">
                         {basename(result.audioPath)}
                       </span>

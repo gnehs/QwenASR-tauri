@@ -66,8 +66,8 @@ export function BatchTranscriptionPanel({
   onRun: () => void;
 }) {
   return (
-    <div className="panel-stack">
-      <Card className="workflow-card">
+    <div className="flex flex-col gap-3">
+      <Card>
         <CardHeader>
           <CardTitle>批次佇列</CardTitle>
           <CardDescription>加入多個檔案後依序轉錄並輸出字幕。</CardDescription>
@@ -78,7 +78,7 @@ export function BatchTranscriptionPanel({
           </CardAction>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="workflow-actions">
+          <div className="flex flex-wrap items-center gap-2">
             <Button onClick={onPickFiles}>
               <FileAudioIcon data-icon="inline-start" />
               加入檔案
@@ -98,7 +98,7 @@ export function BatchTranscriptionPanel({
             placeholder="預設輸出到各來源檔案所在資料夾"
           />
           <OptionsPanel options={options} onChange={onOptionsChange} />
-          <ScrollArea className="batch-list" viewportClassName="scroll-fade">
+          <ScrollArea className="h-[300px] rounded-lg border">
             {files.length > 0 ? (
               <Table>
                 <TableHeader>
@@ -148,7 +148,7 @@ export function BatchTranscriptionPanel({
             )}
           </ScrollArea>
         </CardContent>
-        <CardFooter className="workflow-footer">
+        <CardFooter className="flex-col items-stretch gap-3 min-[721px]:flex-row min-[721px]:items-center min-[721px]:justify-between">
           <p className="text-sm text-muted-foreground">
             {canRun ? "佇列會由上而下處理。" : "請加入檔案並確認模型已下載。"}
           </p>

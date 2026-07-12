@@ -72,7 +72,7 @@ export function OptionsPanel({
 
   return (
     <Sheet>
-      <div className="options-strip">
+      <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg border bg-muted/40 px-3 py-2.5">
         <div className="min-w-0">
           <div className="text-sm font-medium">
             <Trans>轉錄設定</Trans>
@@ -86,7 +86,7 @@ export function OptionsPanel({
           <Trans>調整</Trans>
         </SheetTrigger>
       </div>
-      <SheetContent className="options-sheet">
+      <SheetContent className="w-[min(420px,100vw)]">
         <SheetHeader>
           <SheetTitle>
             <Trans>轉錄設定</Trans>
@@ -97,7 +97,7 @@ export function OptionsPanel({
             </Trans>
           </SheetDescription>
         </SheetHeader>
-        <div className="options-sheet-body scroll-fade">
+        <div className="min-h-0 overflow-auto px-4 pb-4">
           <FieldGroup>
             <Field>
               <FieldLabel>

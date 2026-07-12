@@ -44,6 +44,7 @@ import {
 } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { formatBytes } from "@/lib/format";
+import { SettingsSection } from "@/components/transcription/SettingsSection";
 import type { DownloadProgress, ModelStatus } from "@/types/transcription";
 
 const modelComparisonMessages = {
@@ -89,236 +90,228 @@ export function ModelPanel({
   const isDeletingModel = deletingModelId !== null;
 
   return (
-    <section className="settings-section" aria-labelledby="model-panel-title">
-      <div className="settings-section-header">
-        <h2 id="model-panel-title" className="settings-section-title">
-          <Trans>模型</Trans>
-        </h2>
-        <p className="settings-section-description">
-          <Trans>在這裡管理 QwenASR 模型。</Trans>
-        </p>
-      </div>
-      <div className="settings-section-content">
-        {models.length === 0 ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <DownloadIcon />
-              </EmptyMedia>
-              <EmptyTitle>
-                <Trans>尚未取得模型清單</Trans>
-              </EmptyTitle>
-              <EmptyDescription>
-                <Trans>
-                  請重新整理模型與工具狀態；在 Tauri app
-                  內會從後端讀取支援模型。
-                </Trans>
-              </EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent>
-              <Button variant="outline" onClick={onRefresh}>
-                <RefreshCwIcon data-icon="inline-start" />
-                <Trans>重新整理</Trans>
-              </Button>
-            </EmptyContent>
-          </Empty>
-        ) : (
-          <div className="model-list">
-            {models.map((model) => {
-              const comparisonMessage =
-                modelComparisonMessages[
-                  model.id as keyof typeof modelComparisonMessages
-                ];
-              const descriptionMessage =
-                modelDescriptionMessages[
-                  model.id as keyof typeof modelDescriptionMessages
-                ];
-              const activeDownloadProgress =
-                isDownloading && downloadProgress?.modelId === model.id
-                  ? downloadProgress
-                  : null;
-              const isActiveDownload = activeDownloadProgress !== null;
-              const isDeletingThisModel = deletingModelId === model.id;
-              const isDeleteDialogOpen = deleteDialogModelId === model.id;
-              const canDeleteModel =
-                model.installed &&
-                !isDownloading &&
-                !isDeletingModel &&
-                !isTranscribing;
+    <SettingsSection
+      id="model-panel-title"
+      title={<Trans>模型</Trans>}
+      description={<Trans>在這裡管理 QwenASR 模型。</Trans>}
+    >
+      {models.length === 0 ? (
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <DownloadIcon />
+            </EmptyMedia>
+            <EmptyTitle>
+              <Trans>尚未取得模型清單</Trans>
+            </EmptyTitle>
+            <EmptyDescription>
+              <Trans>
+                請重新整理模型與工具狀態；在 Tauri app 內會從後端讀取支援模型。
+              </Trans>
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button variant="outline" onClick={onRefresh}>
+              <RefreshCwIcon data-icon="inline-start" />
+              <Trans>重新整理</Trans>
+            </Button>
+          </EmptyContent>
+        </Empty>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {models.map((model) => {
+            const comparisonMessage =
+              modelComparisonMessages[
+                model.id as keyof typeof modelComparisonMessages
+              ];
+            const descriptionMessage =
+              modelDescriptionMessages[
+                model.id as keyof typeof modelDescriptionMessages
+              ];
+            const activeDownloadProgress =
+              isDownloading && downloadProgress?.modelId === model.id
+                ? downloadProgress
+                : null;
+            const isActiveDownload = activeDownloadProgress !== null;
+            const isDeletingThisModel = deletingModelId === model.id;
+            const isDeleteDialogOpen = deleteDialogModelId === model.id;
+            const canDeleteModel =
+              model.installed &&
+              !isDownloading &&
+              !isDeletingModel &&
+              !isTranscribing;
 
-              return (
-                <Card key={model.id}>
-                  <CardHeader>
-                    <CardTitle className="model-card-title">
-                      <span>{model.title}</span>
-                      {model.recommended ? (
-                        <Badge variant="secondary">
-                          <Trans>建議</Trans>
-                        </Badge>
-                      ) : model.role === "forcedAlignment" ? (
-                        <Badge variant="outline">
-                          <Trans>字幕對齊</Trans>
-                        </Badge>
-                      ) : null}
-                    </CardTitle>
-                    <CardDescription>
-                      {descriptionMessage
-                        ? _(descriptionMessage)
-                        : model.description}
-                    </CardDescription>
-                  </CardHeader>
-
-                  <CardContent className="model-card-content">
-                    {comparisonMessage ? (
-                      <p className="model-card-comparison">
-                        {_(comparisonMessage)}
-                      </p>
+            return (
+              <Card key={model.id}>
+                <CardHeader>
+                  <CardTitle className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span>{model.title}</span>
+                    {model.recommended ? (
+                      <Badge variant="secondary">
+                        <Trans>建議</Trans>
+                      </Badge>
+                    ) : model.role === "forcedAlignment" ? (
+                      <Badge variant="outline">
+                        <Trans>字幕對齊</Trans>
+                      </Badge>
                     ) : null}
-                  </CardContent>
+                  </CardTitle>
+                  <CardDescription>
+                    {descriptionMessage
+                      ? _(descriptionMessage)
+                      : model.description}
+                  </CardDescription>
+                </CardHeader>
 
-                  <CardFooter className="model-card-footer">
-                    <div className="model-card-footer-row">
-                      <div className="model-card-meta">
-                        <span className="model-card-meta-item">
-                          <HardDriveIcon className="size-4" />
-                          <Trans>
-                            下載大小
-                            {model.sizeHint.replace(
-                              /^~\s*/,
-                              `${_(approximateLabel)} `,
-                            )}
-                          </Trans>
+                <CardContent className="flex min-w-0 flex-col gap-2">
+                  {comparisonMessage ? (
+                    <p className="m-0 text-[0.8125rem] leading-[1.4] font-medium">
+                      {_(comparisonMessage)}
+                    </p>
+                  ) : null}
+                </CardContent>
+
+                <CardFooter className="flex flex-col items-stretch gap-3 py-2">
+                  <div className="flex min-w-0 flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-2 text-[0.8125rem] text-muted-foreground">
+                      <span className="inline-flex items-center gap-1.5 whitespace-nowrap">
+                        <HardDriveIcon className="size-4" />
+                        <Trans>
+                          下載大小
+                          {model.sizeHint.replace(
+                            /^~\s*/,
+                            `${_(approximateLabel)} `,
+                          )}
+                        </Trans>
+                      </span>
+                      {isActiveDownload ? (
+                        <span className="inline-flex items-center gap-1.5 font-medium whitespace-nowrap text-foreground">
+                          <Spinner />
+                          <Trans>下載中</Trans>
                         </span>
-                        {isActiveDownload ? (
-                          <span className="model-card-meta-item model-card-status">
-                            <Spinner />
-                            <Trans>下載中</Trans>
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {!model.installed && !isActiveDownload ? (
-                        <Button
-                          size="sm"
-                          disabled={isDownloading || isDeletingModel}
-                          onClick={() => onDownload(model.id)}
-                        >
-                          <DownloadIcon data-icon="inline-start" />
-                          <Trans>下載模型</Trans>
-                        </Button>
-                      ) : null}
-
-                      {model.installed ? (
-                        <Dialog
-                          open={isDeleteDialogOpen}
-                          onOpenChange={(open) =>
-                            setDeleteDialogModelId(open ? model.id : null)
-                          }
-                          disablePointerDismissal={isDeletingThisModel}
-                        >
-                          <DialogTrigger
-                            disabled={!canDeleteModel}
-                            render={
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={!canDeleteModel}
-                              />
-                            }
-                          >
-                            <Trash2Icon data-icon="inline-start" />
-                            <Trans>移除</Trans>
-                          </DialogTrigger>
-                          <DialogContent showCloseButton={!isDeletingThisModel}>
-                            <DialogHeader>
-                              <DialogTitle>
-                                <Trans>移除 {model.title}</Trans>
-                              </DialogTitle>
-                              <DialogDescription>
-                                <Trans>
-                                  這會移除已下載的模型檔案；之後需重新下載才能使用此模型。
-                                </Trans>
-                              </DialogDescription>
-                            </DialogHeader>
-                            <DialogFooter>
-                              <DialogClose
-                                render={<Button variant="outline" />}
-                                disabled={isDeletingThisModel}
-                              >
-                                <Trans>取消</Trans>
-                              </DialogClose>
-                              <Button
-                                variant="destructive"
-                                disabled={isDeletingThisModel}
-                                onClick={async () => {
-                                  const deleted = await onDeleteModel(model.id);
-                                  if (deleted) {
-                                    setDeleteDialogModelId(null);
-                                  }
-                                }}
-                              >
-                                {isDeletingThisModel ? (
-                                  <Spinner data-icon="inline-start" />
-                                ) : (
-                                  <Trash2Icon data-icon="inline-start" />
-                                )}
-                                <Trans>移除模型</Trans>
-                              </Button>
-                            </DialogFooter>
-                          </DialogContent>
-                        </Dialog>
                       ) : null}
                     </div>
 
-                    {isActiveDownload ? (
-                      <div className="model-download-footer">
-                        <Progress
-                          aria-label={t`${model.title} 下載進度`}
-                          className="model-download-progress"
-                          value={activeDownloadProgress.percent}
-                        >
-                          <ProgressLabel className="min-w-0 flex-1 truncate">
-                            <Trans>正在下載模型檔案</Trans>
-                          </ProgressLabel>
-                          <ProgressValue className="shrink-0 text-foreground">
-                            {() =>
-                              `${activeDownloadProgress.percent.toFixed(0)}%`
-                            }
-                          </ProgressValue>
-                        </Progress>
-                        <div className="model-download-meta">
-                          <span className="truncate">
-                            {activeDownloadProgress.currentFile ?? (
-                              <Trans>準備下載</Trans>
-                            )}
-                          </span>
-                          <span>
-                            <Trans>
-                              {activeDownloadProgress.fileIndex}/
-                              {activeDownloadProgress.totalFiles} 個檔案
-                            </Trans>
-                          </span>
-                          <span>
-                            {formatBytes(
-                              activeDownloadProgress.fileBytesCompleted,
-                            )}{" "}
-                            /{" "}
-                            {formatBytes(activeDownloadProgress.fileTotalBytes)}
-                          </span>
-                          <span>
-                            {formatBytes(downloadMovingAverageSpeedBytesPerSec)}
-                            /s
-                          </span>
-                        </div>
-                      </div>
+                    {!model.installed && !isActiveDownload ? (
+                      <Button
+                        size="sm"
+                        disabled={isDownloading || isDeletingModel}
+                        onClick={() => onDownload(model.id)}
+                      >
+                        <DownloadIcon data-icon="inline-start" />
+                        <Trans>下載模型</Trans>
+                      </Button>
                     ) : null}
-                  </CardFooter>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </section>
+
+                    {model.installed ? (
+                      <Dialog
+                        open={isDeleteDialogOpen}
+                        onOpenChange={(open) =>
+                          setDeleteDialogModelId(open ? model.id : null)
+                        }
+                        disablePointerDismissal={isDeletingThisModel}
+                      >
+                        <DialogTrigger
+                          disabled={!canDeleteModel}
+                          render={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={!canDeleteModel}
+                            />
+                          }
+                        >
+                          <Trash2Icon data-icon="inline-start" />
+                          <Trans>移除</Trans>
+                        </DialogTrigger>
+                        <DialogContent showCloseButton={!isDeletingThisModel}>
+                          <DialogHeader>
+                            <DialogTitle>
+                              <Trans>移除 {model.title}</Trans>
+                            </DialogTitle>
+                            <DialogDescription>
+                              <Trans>
+                                這會移除已下載的模型檔案；之後需重新下載才能使用此模型。
+                              </Trans>
+                            </DialogDescription>
+                          </DialogHeader>
+                          <DialogFooter>
+                            <DialogClose
+                              render={<Button variant="outline" />}
+                              disabled={isDeletingThisModel}
+                            >
+                              <Trans>取消</Trans>
+                            </DialogClose>
+                            <Button
+                              variant="destructive"
+                              disabled={isDeletingThisModel}
+                              onClick={async () => {
+                                const deleted = await onDeleteModel(model.id);
+                                if (deleted) {
+                                  setDeleteDialogModelId(null);
+                                }
+                              }}
+                            >
+                              {isDeletingThisModel ? (
+                                <Spinner data-icon="inline-start" />
+                              ) : (
+                                <Trash2Icon data-icon="inline-start" />
+                              )}
+                              <Trans>移除模型</Trans>
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    ) : null}
+                  </div>
+
+                  {isActiveDownload ? (
+                    <div className="flex min-w-0 flex-col items-stretch gap-2.5">
+                      <Progress
+                        aria-label={t`${model.title} 下載進度`}
+                        className="gap-2"
+                        value={activeDownloadProgress.percent}
+                      >
+                        <ProgressLabel className="min-w-0 flex-1 truncate">
+                          <Trans>正在下載模型檔案</Trans>
+                        </ProgressLabel>
+                        <ProgressValue className="shrink-0 text-foreground">
+                          {() =>
+                            `${activeDownloadProgress.percent.toFixed(0)}%`
+                          }
+                        </ProgressValue>
+                      </Progress>
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3.5 gap-y-2 text-xs/relaxed text-muted-foreground tabular-nums">
+                        <span className="truncate">
+                          {activeDownloadProgress.currentFile ?? (
+                            <Trans>準備下載</Trans>
+                          )}
+                        </span>
+                        <span>
+                          <Trans>
+                            {activeDownloadProgress.fileIndex}/
+                            {activeDownloadProgress.totalFiles} 個檔案
+                          </Trans>
+                        </span>
+                        <span>
+                          {formatBytes(
+                            activeDownloadProgress.fileBytesCompleted,
+                          )}{" "}
+                          / {formatBytes(activeDownloadProgress.fileTotalBytes)}
+                        </span>
+                        <span>
+                          {formatBytes(downloadMovingAverageSpeedBytesPerSec)}
+                          /s
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+                </CardFooter>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </SettingsSection>
   );
 }

@@ -39,8 +39,8 @@ export function SingleTranscriptionPanel({
   onRun: () => void;
 }) {
   return (
-    <div className="panel-stack">
-      <Card className="workflow-card">
+    <div className="flex flex-col gap-3">
+      <Card>
         <CardHeader>
           <CardTitle>單次轉錄</CardTitle>
           <CardDescription>
@@ -50,10 +50,14 @@ export function SingleTranscriptionPanel({
         <CardContent className="flex flex-col gap-4">
           <button
             type="button"
-            className={cn("file-pick-surface", singleFile && "is-selected")}
+            className={cn(
+              "flex w-full min-w-0 items-center gap-3.5 rounded-lg border border-dashed bg-muted/70 p-[18px] text-left transition-colors hover:border-primary/70 hover:bg-primary/5 focus-visible:border-primary/70 focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:outline-none",
+              singleFile &&
+                "border-primary/70 bg-primary/5 ring-2 ring-primary/20",
+            )}
             onClick={onPickFile}
           >
-            <span className="file-pick-icon">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
               <FileAudioIcon />
             </span>
             <span className="min-w-0">
@@ -86,7 +90,7 @@ export function SingleTranscriptionPanel({
           </FieldGroup>
           <OptionsPanel options={options} onChange={onOptionsChange} />
         </CardContent>
-        <CardFooter className="workflow-footer">
+        <CardFooter className="flex-col items-stretch gap-3 min-[721px]:flex-row min-[721px]:items-center min-[721px]:justify-between">
           <p className="text-sm text-muted-foreground">
             {canRun ? "準備好後即可開始。" : "請先選檔並確認模型已下載。"}
           </p>
