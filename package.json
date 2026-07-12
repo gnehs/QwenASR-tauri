@@ -12,6 +12,7 @@
     "i18n:compile": "lingui compile --strict",
     "prepare": "husky",
     "preview": "vite preview",
+    "version:set": "node scripts/update-version.mjs",
     "test:prepare-mlx": "node --test scripts/prepare-mlx-metallib.test.mjs",
     "tauri:prepare-mlx": "node scripts/prepare-mlx-metallib.mjs",
     "tauri": "PATH=$HOME/.cargo/bin:$PATH tauri",

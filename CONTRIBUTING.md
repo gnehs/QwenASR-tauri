@@ -32,6 +32,16 @@ xcode-select --install
 corepack enable
 ```
 
+## 更新版本
+
+請使用版本腳本同步前端、Tauri、Cargo manifest 與 `Cargo.lock`，不要手動只修改單一檔案：
+
+```bash
+pnpm version:set 0.1.4
+```
+
+版本必須符合 `x.y.z` 的 SemVer 格式。腳本只會更新 `src-tauri/Cargo.lock` 中根套件的版本，不會重新解析、下載或升級依賴；如果同步失敗，會還原本次已修改的檔案。
+
 安裝 FFmpeg：
 
 ```bash
