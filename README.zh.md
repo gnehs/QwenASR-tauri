@@ -24,7 +24,15 @@ brew install ffmpeg
 
 ## 取得 QwenASR Studio
 
-你可以直接到 GitHub Releases 下載最新正式版：
+如果你已經安裝 Homebrew，可以在終端機執行以下指令安裝 QwenASR Studio：
+
+```bash
+brew install --cask gnehs/tap/qwenasr-studio
+```
+
+安裝完成後，就能從「應用程式」資料夾開啟 QwenASR Studio。
+
+你也可以直接到 GitHub Releases 下載最新正式版：
 
 1. 前往本專案的 [Releases 頁面](https://github.com/gnehs/QwenASR-tauri/releases/latest)。
 2. 下載最新版中的 `qwenasr-studio-macos-arm64-app.dmg`。

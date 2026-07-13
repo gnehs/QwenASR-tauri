@@ -26,7 +26,15 @@ After installation, restart QwenASR Studio and check FFmpeg status in **Settings
 
 ## Get QwenASR Studio
 
-Download the latest release from GitHub Releases and install it directly:
+If Homebrew is installed, you can install QwenASR Studio with:
+
+```bash
+brew install --cask gnehs/tap/qwenasr-studio
+```
+
+You can then open QwenASR Studio from your Applications folder.
+
+Alternatively, download the latest release from GitHub Releases and install it directly:
 
 1. Open this repository's [Releases page](https://github.com/gnehs/QwenASR-tauri/releases/latest).
 2. Download `qwenasr-studio-macos-arm64-app.dmg` from the latest release assets.
