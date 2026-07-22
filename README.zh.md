@@ -1,3 +1,5 @@
+> [English](README.md) | 繁體中文
+
 # QwenASR Studio
 
 QwenASR Studio 是在 Mac 上執行的本機語音轉文字工具。把音訊或影片拖進程式，選好語言與模型後，就能取得逐字稿；需要字幕時，也可以輸出 `.srt` 檔。

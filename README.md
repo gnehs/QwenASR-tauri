@@ -1,8 +1,8 @@
+> English | [繁體中文](README.zh.md)
+
 # QwenASR Studio
 
 QwenASR Studio is a local speech-to-text desktop app for macOS. Drag and drop audio or video, choose a language and model, and get transcripts. When needed, you can also export `.srt` subtitle files.
-
-> README in Traditional Chinese: [README.zh.md](README.zh.md)
 
 Audio, video, and transcription results are processed locally on your machine and are not uploaded to this project.
 
