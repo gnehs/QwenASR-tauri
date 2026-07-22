@@ -48,7 +48,7 @@ jobs:
         if: ${{ github.ref_type == 'tag' }}
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
-        run: pnpm run version:set -- "$RELEASE_VERSION"
+        run: pnpm run version:set "$RELEASE_VERSION"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
