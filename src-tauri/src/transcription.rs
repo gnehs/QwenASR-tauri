@@ -18,6 +18,7 @@ use qwen3_asr::{
 };
 use serde::Serialize;
 use tauri::{ipc::Channel, AppHandle, Emitter};
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::audio;
 use crate::error::{AppError, AppResult};
@@ -65,6 +66,17 @@ static INFERENCE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static ASR_ENGINE_CACHE: OnceLock<Mutex<Option<CachedAsrEngine>>> = OnceLock::new();
 static ASR_CACHE_REAPER: OnceLock<Option<mpsc::Sender<u64>>> = OnceLock::new();
 static ASR_CACHE_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PunctuationProfile {
+    Arabic,
+    Chinese,
+    Indic,
+    Japanese,
+    Korean,
+    General,
+}
+
 const ASR_LANGUAGES: &[&str] = &[
     "Chinese",
     "English",
@@ -1022,6 +1034,7 @@ struct PendingChunk {
     raw_text: String,
     output_text: String,
     alignment_language: Option<&'static str>,
+    punctuation_profile: PunctuationProfile,
 }
 
 struct PendingTranscription {
@@ -1357,6 +1370,10 @@ fn transcribe_with_context(
                             chunk.duration_ms(),
                             chunk.start_ms(),
                             options.segment_by_punctuation,
+                            punctuation_profile_for_chunk(
+                                asr_language.as_deref(),
+                                Some(partial.language.as_str()),
+                            ),
                         );
                         let stream_percent = progress_between(
                             before_percent,
@@ -1443,12 +1460,17 @@ fn transcribe_with_context(
                 asr_language.as_deref(),
                 chunk_detected_language.as_deref().unwrap_or(""),
             );
+            let chunk_punctuation_profile = punctuation_profile_for_chunk(
+                asr_language.as_deref(),
+                chunk_detected_language.as_deref(),
+            );
             transcript_parts.push(chunk_text.clone());
             vad_estimated_segments.extend(build_approximate_segments_with_offset(
                 &chunk_text,
                 chunk.duration_ms(),
                 chunk.start_ms(),
                 options.segment_by_punctuation,
+                chunk_punctuation_profile,
             ));
             pending_chunks.push(PendingChunk {
                 chunk_index,
@@ -1456,6 +1478,7 @@ fn transcribe_with_context(
                 raw_text: raw_chunk_text,
                 output_text: chunk_text,
                 alignment_language,
+                punctuation_profile: chunk_punctuation_profile,
             });
         }
 
@@ -1629,6 +1652,7 @@ fn finalize_transcription_with_context(
                 chunk.range.duration_ms(),
                 chunk.range.start_ms(),
                 pending.options.segment_by_punctuation,
+                chunk.punctuation_profile,
             )
         }));
         processed_alignment_ms = processed_alignment_ms.saturating_add(chunk.range.duration_ms());
@@ -2008,7 +2032,7 @@ fn collapse_spaced_acronyms(text: &str) -> String {
 
 #[cfg(test)]
 fn build_approximate_segments(text: &str, audio_ms: u64) -> Vec<TranscriptSegment> {
-    build_approximate_segments_with_offset(text, audio_ms, 0, true)
+    build_approximate_segments_with_offset(text, audio_ms, 0, true, PunctuationProfile::Chinese)
 }
 
 #[cfg(test)]
@@ -2017,6 +2041,7 @@ fn build_streaming_partial_segments(
     partial_text: &str,
     chunk: AudioRange,
     segment_by_punctuation: bool,
+    punctuation_profile: PunctuationProfile,
 ) -> Vec<TranscriptSegment> {
     let mut segments = completed_segments.to_vec();
     if !partial_text.trim().is_empty() {
@@ -2025,6 +2050,7 @@ fn build_streaming_partial_segments(
             chunk.duration_ms(),
             chunk.start_ms(),
             segment_by_punctuation,
+            punctuation_profile,
         ));
     }
     segments
@@ -2035,6 +2061,7 @@ fn build_approximate_segments_with_offset(
     audio_ms: u64,
     offset_ms: u64,
     segment_by_punctuation: bool,
+    punctuation_profile: PunctuationProfile,
 ) -> Vec<TranscriptSegment> {
     let text = text.trim();
     if text.is_empty() {
@@ -2042,7 +2069,7 @@ fn build_approximate_segments_with_offset(
     }
 
     let audio_ms = audio_ms.max(1);
-    let mut units = transcript_units(text, segment_by_punctuation);
+    let mut units = transcript_units(text, segment_by_punctuation, punctuation_profile);
     if units.is_empty() {
         return Vec::new();
     }
@@ -2113,6 +2140,64 @@ fn alignment_language(forced: Option<&str>, detected: &str) -> Option<&'static s
     }
 }
 
+fn punctuation_profile(language: Option<&str>) -> PunctuationProfile {
+    let Some(language) = language
+        .map(str::trim)
+        .filter(|language| !language.is_empty())
+    else {
+        return PunctuationProfile::General;
+    };
+    let language = language.to_ascii_lowercase();
+
+    if matches!(language.as_str(), "arabic" | "persian" | "ar" | "fa") {
+        PunctuationProfile::Arabic
+    } else if matches!(language.as_str(), "hindi" | "hi") {
+        PunctuationProfile::Indic
+    } else if matches!(language.as_str(), "japanese" | "ja" | "jp") {
+        PunctuationProfile::Japanese
+    } else if matches!(language.as_str(), "korean" | "ko" | "kr") {
+        PunctuationProfile::Korean
+    } else if matches!(
+        language.as_str(),
+        "chinese"
+            | "zh"
+            | "chinese (simplified)"
+            | "cantonese"
+            | "anhui"
+            | "dongbei"
+            | "fujian"
+            | "gansu"
+            | "guizhou"
+            | "hebei"
+            | "henan"
+            | "hubei"
+            | "hunan"
+            | "jiangxi"
+            | "ningxia"
+            | "shandong"
+            | "shaanxi"
+            | "shanxi"
+            | "sichuan"
+            | "tianjin"
+            | "yunnan"
+            | "zhejiang"
+            | "wu language"
+            | "minnan language"
+    ) || language.starts_with("cantonese (")
+    {
+        PunctuationProfile::Chinese
+    } else {
+        PunctuationProfile::General
+    }
+}
+
+fn punctuation_profile_for_chunk(
+    forced_language: Option<&str>,
+    detected_language: Option<&str>,
+) -> PunctuationProfile {
+    punctuation_profile(forced_language.or(detected_language))
+}
+
 fn build_aligned_segments_with_offset(
     text: &str,
     aligned_units: &[AlignedUnit],
@@ -2127,7 +2212,11 @@ fn build_aligned_segments_with_offset(
         return Ok(None);
     }
 
-    let phrase_texts = transcript_units(text, segment_by_punctuation);
+    let phrase_texts = transcript_units(
+        text,
+        segment_by_punctuation,
+        punctuation_profile(Some(language)),
+    );
     if phrase_texts.is_empty() {
         return Ok(None);
     }
@@ -2214,41 +2303,98 @@ fn format_duration_short(ms: u64) -> String {
     format!("{minutes} 分 {seconds:02} 秒")
 }
 
-fn split_transcript_units(text: &str) -> Vec<String> {
+fn split_transcript_units(text: &str, punctuation_profile: PunctuationProfile) -> Vec<String> {
     let mut units = Vec::new();
+
+    if matches!(punctuation_profile, PunctuationProfile::General) {
+        split_sentence_unit(text, punctuation_profile, &mut units);
+    } else {
+        let mut pending_sentence = String::new();
+        let mut sentences = text.split_sentence_bounds().peekable();
+        while let Some(sentence) = sentences.next() {
+            pending_sentence.push_str(sentence);
+            if sentences.peek().is_some_and(|next| {
+                should_merge_sentence_boundary(sentence, next, punctuation_profile)
+            }) {
+                continue;
+            }
+            split_sentence_unit(&pending_sentence, punctuation_profile, &mut units);
+            pending_sentence.clear();
+        }
+    }
+
+    units
+}
+
+fn split_sentence_unit(
+    text: &str,
+    punctuation_profile: PunctuationProfile,
+    units: &mut Vec<String>,
+) {
     let mut current = String::new();
     let mut current_chars = 0usize;
+    let mut closing_punctuation = Vec::new();
+    let mut boundary_pending = false;
 
     for character in text.chars() {
         if matches!(character, '\n' | '\r') {
-            push_segment_unit(&mut units, &mut current, &mut current_chars);
+            push_segment_unit(units, &mut current, &mut current_chars);
+            closing_punctuation.clear();
+            boundary_pending = false;
             continue;
         }
 
         if character.is_whitespace() {
-            if !current.ends_with(' ') && !current.is_empty() {
+            if boundary_pending {
+                push_segment_unit(units, &mut current, &mut current_chars);
+                boundary_pending = false;
+            } else if !current.ends_with(' ') && !current.is_empty() {
                 current.push(' ');
             }
             continue;
         }
 
+        if boundary_pending && !is_boundary_suffix(character, punctuation_profile) {
+            push_segment_unit(units, &mut current, &mut current_chars);
+            boundary_pending = false;
+        }
+
+        let is_inside_punctuation = !closing_punctuation.is_empty();
         current.push(character);
         current_chars += 1;
 
-        if is_hard_boundary(character)
-            || (is_soft_boundary(character) && current_chars >= TARGET_SRT_CHARS)
-        {
-            push_segment_unit(&mut units, &mut current, &mut current_chars);
+        if character == '"' {
+            if closing_punctuation.last() == Some(&character) {
+                closing_punctuation.pop();
+            } else {
+                closing_punctuation.push(character);
+            }
+        } else if let Some(expected_closing) = matching_closing_punctuation(character) {
+            closing_punctuation.push(expected_closing);
+        } else if closing_punctuation.last() == Some(&character) {
+            closing_punctuation.pop();
+        }
+
+        let is_hard_boundary =
+            is_phrase_boundary(character, punctuation_profile) && !is_inside_punctuation;
+        let is_long_soft_boundary = is_soft_boundary(character, punctuation_profile)
+            && !is_inside_punctuation
+            && current_chars >= TARGET_SRT_CHARS;
+        if is_hard_boundary || is_long_soft_boundary {
+            boundary_pending = true;
         }
     }
 
-    push_segment_unit(&mut units, &mut current, &mut current_chars);
-    units
+    push_segment_unit(units, &mut current, &mut current_chars);
 }
 
-fn transcript_units(text: &str, segment_by_punctuation: bool) -> Vec<String> {
+fn transcript_units(
+    text: &str,
+    segment_by_punctuation: bool,
+    punctuation_profile: PunctuationProfile,
+) -> Vec<String> {
     if segment_by_punctuation {
-        split_transcript_units(text)
+        split_transcript_units(text, punctuation_profile)
     } else {
         let text = text.trim();
         (!text.is_empty())
@@ -2286,15 +2432,79 @@ fn push_segment_unit(units: &mut Vec<String>, current: &mut String, current_char
     *current_chars = 0;
 }
 
-fn is_hard_boundary(character: char) -> bool {
+fn is_phrase_boundary(character: char, punctuation_profile: PunctuationProfile) -> bool {
+    matches!(character, ';' | '；' | '؛')
+        || matches!(punctuation_profile, PunctuationProfile::General)
+            && matches!(character, '。' | '，' | '！' | '？' | '!' | '?')
+        || matches!(punctuation_profile, PunctuationProfile::Chinese)
+            && matches!(character, '，' | '、')
+        || matches!(punctuation_profile, PunctuationProfile::Japanese) && character == '、'
+}
+
+fn is_soft_boundary(character: char, punctuation_profile: PunctuationProfile) -> bool {
+    matches!(character, ',' | '：' | ':' | '،')
+        || matches!(punctuation_profile, PunctuationProfile::General)
+            && matches!(character, '.' | '、')
+        || matches!(punctuation_profile, PunctuationProfile::Korean)
+            && matches!(character, '，' | '、')
+}
+
+fn is_boundary_suffix(character: char, punctuation_profile: PunctuationProfile) -> bool {
+    is_phrase_boundary(character, punctuation_profile) || is_closing_punctuation(character)
+}
+
+fn should_merge_sentence_boundary(
+    sentence: &str,
+    next: &str,
+    punctuation_profile: PunctuationProfile,
+) -> bool {
+    matches!(punctuation_profile, PunctuationProfile::Korean)
+        && sentence.chars().last().is_some_and(is_closing_punctuation)
+        && next.chars().next().is_some_and(char::is_alphanumeric)
+}
+
+fn is_closing_punctuation(character: char) -> bool {
     matches!(
         character,
-        '。' | '，' | '！' | '？' | '!' | '?' | '；' | ';' | '\n'
+        '"' | ')'
+            | ']'
+            | '}'
+            | '’'
+            | '”'
+            | '」'
+            | '』'
+            | '）'
+            | '】'
+            | '〕'
+            | '］'
+            | '｝'
+            | '〉'
+            | '》'
+            | '〙'
+            | '〗'
     )
 }
 
-fn is_soft_boundary(character: char) -> bool {
-    matches!(character, ',' | '.' | '、' | '：' | ':')
+fn matching_closing_punctuation(character: char) -> Option<char> {
+    match character {
+        '(' => Some(')'),
+        '[' => Some(']'),
+        '{' => Some('}'),
+        '‘' => Some('’'),
+        '“' => Some('”'),
+        '「' => Some('」'),
+        '『' => Some('』'),
+        '（' => Some('）'),
+        '【' => Some('】'),
+        '〔' => Some('〕'),
+        '［' => Some('］'),
+        '｛' => Some('｝'),
+        '〈' => Some('〉'),
+        '《' => Some('》'),
+        '〘' => Some('〙'),
+        '〖' => Some('〗'),
+        _ => None,
+    }
 }
 
 fn weighted_char_count(text: &str) -> usize {
@@ -2534,6 +2744,7 @@ mod tests {
     fn splits_transcript_text_into_readable_units() {
         let units = split_transcript_units(
             "AI幫你股票賺了很多錢嗎？我們今天討論風險控管，還有資產配置。最後看實際案例。",
+            PunctuationProfile::Chinese,
         );
 
         assert_eq!(
@@ -2548,17 +2759,140 @@ mod tests {
     }
 
     #[test]
+    fn splits_short_japanese_text_at_ideographic_punctuation() {
+        let units = split_transcript_units(
+            "今日は晴れ、明日は雨。次は映画です！",
+            PunctuationProfile::Japanese,
+        );
+
+        assert_eq!(units, vec!["今日は晴れ、", "明日は雨。", "次は映画です！"]);
+    }
+
+    #[test]
+    fn keeps_japanese_title_punctuation_together() {
+        let units = split_transcript_units(
+            "映画『ちいかわ、人魚の島のひみつ』。公開が楽しみです。",
+            PunctuationProfile::Japanese,
+        );
+
+        assert_eq!(
+            units,
+            vec!["映画『ちいかわ、人魚の島のひみつ』。", "公開が楽しみです。"]
+        );
+    }
+
+    #[test]
+    fn keeps_closing_and_repeated_punctuation_with_the_previous_unit() {
+        let units = split_transcript_units(
+            "「急いで！」次は何？！大丈夫。",
+            PunctuationProfile::Japanese,
+        );
+
+        assert_eq!(units, vec!["「急いで！」", "次は何？！", "大丈夫。"]);
+    }
+
+    #[test]
+    fn selects_language_specific_punctuation_profiles() {
+        assert_eq!(
+            punctuation_profile_for_chunk(Some("English"), Some("Japanese")),
+            PunctuationProfile::General
+        );
+        assert_eq!(
+            punctuation_profile_for_chunk(None, Some("Korean")),
+            PunctuationProfile::Korean
+        );
+        assert_eq!(
+            punctuation_profile_for_chunk(None, Some("Persian")),
+            PunctuationProfile::Arabic
+        );
+        assert_eq!(
+            punctuation_profile_for_chunk(None, Some("Hindi")),
+            PunctuationProfile::Indic
+        );
+        assert_eq!(
+            punctuation_profile_for_chunk(None, Some("Cantonese (Hong Kong accent)")),
+            PunctuationProfile::Chinese
+        );
+    }
+
+    #[test]
+    fn splits_short_korean_sentences_at_periods() {
+        let units = split_transcript_units("안녕하세요. 반갑습니다.", PunctuationProfile::Korean);
+
+        assert_eq!(units, vec!["안녕하세요.", "반갑습니다."]);
+    }
+
+    #[test]
+    fn keeps_korean_commas_and_decimal_points_inside_sentences() {
+        let units = split_transcript_units(
+            "사과, 배, 포도를 샀고 가격은 3.14원입니다. 다음 문장입니다.",
+            PunctuationProfile::Korean,
+        );
+
+        assert_eq!(
+            units,
+            vec![
+                "사과, 배, 포도를 샀고 가격은 3.14원입니다.",
+                "다음 문장입니다."
+            ]
+        );
+    }
+
+    #[test]
+    fn keeps_korean_closing_quotes_with_the_previous_sentence() {
+        let units = split_transcript_units(
+            "그가 “괜찮아요?”라고 물었습니다. 네.",
+            PunctuationProfile::Korean,
+        );
+
+        assert_eq!(units, vec!["그가 “괜찮아요?”라고 물었습니다.", "네."]);
+    }
+
+    #[test]
+    fn keeps_ideographic_commas_language_specific() {
+        let text = "今日は晴れ、明日は雨。";
+
+        assert_eq!(
+            split_transcript_units(text, PunctuationProfile::Japanese),
+            vec!["今日は晴れ、", "明日は雨。"]
+        );
+        assert_eq!(
+            split_transcript_units(text, PunctuationProfile::Korean),
+            vec![text]
+        );
+    }
+
+    #[test]
+    fn splits_arabic_and_indic_sentence_terminators() {
+        assert_eq!(
+            split_transcript_units("مرحبًا. كيف حالك؟ بخير.", PunctuationProfile::Arabic),
+            vec!["مرحبًا.", "كيف حالك؟", "بخير."]
+        );
+        assert_eq!(
+            split_transcript_units("यह पहला वाक्य है। यह दूसरा वाक्य है।", PunctuationProfile::Indic,),
+            vec!["यह पहला वाक्य है।", "यह दूसरा वाक्य है।"]
+        );
+    }
+
+    #[test]
     fn splits_english_only_at_punctuation_boundaries() {
         let text = "Interview Mr. Swallows. Give Mr. Swallows your full attention. Whatever Mr. Swallows says is good, and you're going to go along with it.";
-        let units = split_transcript_units(text);
+        let units = split_transcript_units(text, PunctuationProfile::General);
 
         assert!(units.len() > 1);
         assert!(units
             .iter()
             .take(units.len() - 1)
-            .all(|unit| unit.chars().last().is_some_and(
-                |character| is_hard_boundary(character) || is_soft_boundary(character)
-            )));
+            .all(|unit| unit
+                .chars()
+                .last()
+                .is_some_and(|character| is_phrase_boundary(
+                    character,
+                    PunctuationProfile::General
+                ) || is_soft_boundary(
+                    character,
+                    PunctuationProfile::General
+                ))));
         assert_eq!(
             units
                 .iter()
@@ -2569,17 +2903,33 @@ mod tests {
     }
 
     #[test]
+    fn keeps_short_latin_abbreviations_on_the_existing_general_profile() {
+        let text = "Interview Mr. Swallows.";
+
+        assert_eq!(
+            split_transcript_units(text, PunctuationProfile::General),
+            vec![text]
+        );
+    }
+
+    #[test]
     fn keeps_long_unpunctuated_text_in_one_unit() {
         let text = "This deliberately long transcript has no punctuation and must remain a single subtitle unit even after passing the former seventy two character limit";
 
-        assert_eq!(split_transcript_units(text), vec![text]);
+        assert_eq!(
+            split_transcript_units(text, PunctuationProfile::General),
+            vec![text]
+        );
     }
 
     #[test]
     fn keeps_punctuation_in_one_unit_when_segmentation_is_disabled() {
         let text = "第一句，第二句。Third sentence!";
 
-        assert_eq!(transcript_units(text, false), vec![text]);
+        assert_eq!(
+            transcript_units(text, false, PunctuationProfile::Japanese),
+            vec![text]
+        );
     }
 
     #[test]
@@ -2646,6 +2996,89 @@ mod tests {
     }
 
     #[test]
+    fn preserves_japanese_punctuation_splits_for_forced_alignment() {
+        let text = "今日は晴れ、明日は雨。";
+        let text_units = tokenize_alignment_units(text, "Japanese");
+        let aligned = text_units
+            .iter()
+            .enumerate()
+            .map(|(index, character)| AlignedUnit {
+                text: character.clone(),
+                start_ms: index as u64 * 100,
+                end_ms: index as u64 * 100 + 80,
+            })
+            .collect::<Vec<_>>();
+
+        let segments = build_aligned_segments_with_offset(
+            text,
+            &aligned,
+            "Japanese",
+            Some("Japanese"),
+            0,
+            aligned.len() as u64 * 100,
+            true,
+        )
+        .unwrap()
+        .expect("Japanese punctuation splitting should preserve alignment units");
+
+        assert_eq!(
+            segments
+                .iter()
+                .map(|segment| segment.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["今日は晴れ、", "明日は雨。"]
+        );
+        assert_eq!(
+            segments
+                .iter()
+                .flat_map(|segment| tokenize_alignment_units(&segment.text, "Japanese"))
+                .collect::<Vec<_>>(),
+            text_units
+        );
+        assert!(segments
+            .windows(2)
+            .all(|pair| pair[0].end_ms <= pair[1].start_ms));
+    }
+
+    #[test]
+    fn preserves_korean_sentence_splits_for_forced_alignment() {
+        let text = "안녕하세요. 반갑습니다.";
+        let text_units = tokenize_alignment_units(text, "Korean");
+        let aligned = text_units
+            .iter()
+            .enumerate()
+            .map(|(index, word)| AlignedUnit {
+                text: word.clone(),
+                start_ms: index as u64 * 500,
+                end_ms: index as u64 * 500 + 400,
+            })
+            .collect::<Vec<_>>();
+
+        let segments = build_aligned_segments_with_offset(
+            text,
+            &aligned,
+            "Korean",
+            Some("Korean"),
+            0,
+            aligned.len() as u64 * 500,
+            true,
+        )
+        .unwrap()
+        .expect("Korean sentence splitting should preserve alignment units");
+
+        assert_eq!(
+            segments
+                .iter()
+                .map(|segment| segment.text.as_str())
+                .collect::<Vec<_>>(),
+            vec!["안녕하세요.", "반갑습니다."]
+        );
+        assert!(segments
+            .windows(2)
+            .all(|pair| pair[0].end_ms <= pair[1].start_ms));
+    }
+
+    #[test]
     fn approximate_segments_cover_audio_with_monotonic_ranges() {
         let text = "AI幫你股票賺了很多錢嗎？我們今天討論風險控管，還有資產配置。最後看實際案例。";
         let segments = build_approximate_segments(text, 10_000);
@@ -2669,7 +3102,13 @@ mod tests {
     #[test]
     fn approximate_segments_use_one_cue_when_segmentation_is_disabled() {
         let text = "第一句，第二句。Third sentence!";
-        let segments = build_approximate_segments_with_offset(text, 10_000, 2_000, false);
+        let segments = build_approximate_segments_with_offset(
+            text,
+            10_000,
+            2_000,
+            false,
+            PunctuationProfile::General,
+        );
 
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].start_ms, 2_000);
@@ -2679,12 +3118,19 @@ mod tests {
 
     #[test]
     fn approximate_segments_keep_vad_chunk_offsets() {
-        let mut segments = build_approximate_segments_with_offset("第一段。", 1_000, 0, true);
+        let mut segments = build_approximate_segments_with_offset(
+            "第一段。",
+            1_000,
+            0,
+            true,
+            PunctuationProfile::Chinese,
+        );
         segments.extend(build_approximate_segments_with_offset(
             "第二段。",
             1_500,
             2_500,
             true,
+            PunctuationProfile::Chinese,
         ));
 
         assert_eq!(segments.first().map(|segment| segment.start_ms), Some(0));
@@ -2705,7 +3151,13 @@ mod tests {
             audio::ASR_SAMPLE_RATE as usize * 5,
         );
 
-        let segments = build_streaming_partial_segments(&completed, "正在串流。", chunk, true);
+        let segments = build_streaming_partial_segments(
+            &completed,
+            "正在串流。",
+            chunk,
+            true,
+            PunctuationProfile::Chinese,
+        );
 
         assert_eq!(segments[0].text, "上一段。");
         assert_eq!(segments[1].text, "正在串流。");
