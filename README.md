@@ -70,13 +70,17 @@ The app first remuxes audio locally before transcription, and cleans temporary f
 
 ## Which model to use
 
-| Model                    | Approx. download size | Suggested use                                                                  |
-| ------------------------ | --------------------: | ------------------------------------------------------------------------------ |
-| Qwen3-ASR 0.6B           |                1.9 GB | Recommended for first-time users; suitable for most recordings and batch jobs. |
-| Qwen3-ASR 1.7B           |                4.7 GB | Better accuracy for noisy or complex audio.                                    |
-| Qwen3 ForcedAligner 0.6B |                1.8 GB | Required only when exporting SRT; app will suggest when needed.                |
+| Model                           | Approx. download size | Suggested use                                                                  |
+| ------------------------------- | --------------------: | ------------------------------------------------------------------------------ |
+| Qwen3-ASR 0.6B                  |                1.9 GB | Recommended for first-time users; suitable for most recordings and batch jobs. |
+| Qwen3-ASR 0.6B JA Anime/Galgame |                1.6 GB | Fine-tuned for Japanese anime, galgame, and visual novel dialogue.             |
+| Qwen3-ASR 1.7B                  |                4.7 GB | Better accuracy for noisy or complex audio.                                    |
+| Qwen3-ASR 1.7B JA Anime/Galgame |                4.1 GB | Higher-accuracy option for Japanese anime, galgame, and visual novel dialogue. |
+| Qwen3 ForcedAligner 0.6B        |                1.8 GB | Required only when exporting SRT; app will suggest when needed.                |
 
 Downloaded models are stored in your Mac application data folder, not in the checked-out project directory. These are large files; ensure enough disk space and stable connectivity when downloading.
+
+The JA Anime/Galgame models are domain-tuned for Japanese character dialogue. For meetings, lectures, news, or general Japanese speech, compare them with the original Qwen3-ASR models before relying on them.
 
 SRT timing precision comes from ForcedAligner and currently supports Chinese, English, Cantonese, French, German, Italian, Japanese, Korean, Portuguese, Russian, and Spanish. Other languages still support subtitle export, but timings are estimated from segment lengths.
 
@@ -109,9 +113,12 @@ Thank you for your interest. For bug reports, feature ideas, or code changes, ch
 - This project is licensed under the [MIT License](LICENSE).
 - QwenASR Studio is built on [alan890104/qwen3-asr-rs](https://github.com/alan890104/qwen3-asr-rs), which is also open source.
 - The app uses models from the Qwen3-ASR family provided by QwenLM.
+- The JA Anime/Galgame model options are fine-tuned checkpoints published by [jaykwok](https://huggingface.co/jaykwok).
 
 ## Related Links
 
 - [Qwen3-ASR GitHub](https://github.com/QwenLM/Qwen3-ASR)
 - [Qwen3-ASR Hugging Face](https://huggingface.co/collections/Qwen/qwen3-asr)
+- [Qwen3-ASR 0.6B JA Anime/Galgame](https://huggingface.co/jaykwok/Qwen3-ASR-0.6B-JA-Anime-Galgame)
+- [Qwen3-ASR 1.7B JA Anime/Galgame](https://huggingface.co/jaykwok/Qwen3-ASR-1.7B-JA-Anime-Galgame)
 - [FFmpeg](https://ffmpeg.org/)

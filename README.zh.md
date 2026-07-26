@@ -70,13 +70,17 @@ wav, mp3, m4a, aac, flac, ogg, mp4, mov, mkv, webm
 
 ## 模型怎麼選
 
-| 模型                     | 下載大小約 | 適合情況                                         |
-| ------------------------ | ---------: | ------------------------------------------------ |
-| Qwen3-ASR 0.6B           |     1.9 GB | 建議先從這個模型開始；適合大多數錄音與批次轉錄。 |
-| Qwen3-ASR 1.7B           |     4.7 GB | 需要較高準確度，或錄音環境較複雜時使用。         |
-| Qwen3 ForcedAligner 0.6B |     1.8 GB | 只在輸出 SRT 字幕時需要；會由程式自動提示下載。  |
+| 模型                            | 下載大小約 | 適合情況                                                   |
+| ------------------------------- | ---------: | ---------------------------------------------------------- |
+| Qwen3-ASR 0.6B                  |     1.9 GB | 建議先從這個模型開始；適合大多數錄音與批次轉錄。           |
+| Qwen3-ASR 0.6B JA Anime/Galgame |     1.6 GB | 針對日本動畫、Galgame 與視覺小說角色對白微調。             |
+| Qwen3-ASR 1.7B                  |     4.7 GB | 需要較高準確度，或錄音環境較複雜時使用。                   |
+| Qwen3-ASR 1.7B JA Anime/Galgame |     4.1 GB | 針對日本動畫、Galgame 與視覺小說角色對白的較高準確度選項。 |
+| Qwen3 ForcedAligner 0.6B        |     1.8 GB | 只在輸出 SRT 字幕時需要；會由程式自動提示下載。            |
 
 模型會下載到 Mac 的應用程式資料夾，不會放進你從 GitHub 下載的專案資料夾。模型較大，請預留足夠磁碟空間並在下載時保持網路連線。
+
+JA Anime/Galgame 模型是針對日語角色對白微調的模型。若要處理會議、講座、新聞或一般日語語音，建議先和原始 Qwen3-ASR 模型比較後再決定使用哪個模型。
 
 SRT 的精準時間軸由 ForcedAligner 產生，目前支援中文、英文、粵語、法文、德文、義大利文、日文、韓文、葡萄牙文、俄文與西班牙文；其他語言仍可輸出字幕，但時間軸是依片段長度估算。
 
@@ -109,9 +113,12 @@ SRT 的精準時間軸由 ForcedAligner 產生，目前支援中文、英文、�
 - 本專案採用 [MIT License](LICENSE) 授權。
 - QwenASR Studio 基於 [alan890104/qwen3-asr-rs](https://github.com/alan890104/qwen3-asr-rs) 開發，該專案亦為開源授權。
 - 本程式所使用的模型來自 QwenLM 所提供的 Qwen3-ASR 家族。
+- JA Anime/Galgame 模型選項使用 [jaykwok](https://huggingface.co/jaykwok) 發布的微調 checkpoint。
 
 ## 相關連結
 
 - [Qwen3-ASR GitHub](https://github.com/QwenLM/Qwen3-ASR)
 - [Qwen3-ASR Hugging Face](https://huggingface.co/collections/Qwen/qwen3-asr)
+- [Qwen3-ASR 0.6B JA Anime/Galgame](https://huggingface.co/jaykwok/Qwen3-ASR-0.6B-JA-Anime-Galgame)
+- [Qwen3-ASR 1.7B JA Anime/Galgame](https://huggingface.co/jaykwok/Qwen3-ASR-1.7B-JA-Anime-Galgame)
 - [FFmpeg](https://ffmpeg.org/)
