@@ -12,11 +12,7 @@ import {
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
 
-import {
-  audioFilters,
-  defaultOptions,
-  languageItems,
-} from "@/lib/app-constants";
+import { defaultOptions, languageItems } from "@/lib/app-constants";
 import { basename, formatInvokeError, uniquePaths } from "@/lib/format";
 import type {
   DownloadProgress,
@@ -47,11 +43,6 @@ const forcedAlignmentLanguages = new Set([
   "russian",
   "spanish",
 ]);
-const supportedExtensions = new Set(
-  audioFilters.flatMap((filter) =>
-    filter.extensions.map((extension) => extension.toLowerCase()),
-  ),
-);
 let notificationPermissionRequested = false;
 const downloadSpeedWindowMs = 5000;
 const progressUpdateIntervalMs = 200;
@@ -171,11 +162,6 @@ function writeStoredTranscribedFileCount(count: number) {
 
 function createTaskId() {
   return window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
-}
-
-function isSupportedMediaPath(path: string) {
-  const extension = path.split(".").pop()?.toLowerCase();
-  return Boolean(extension && supportedExtensions.has(extension));
 }
 
 function pathsFromDialogSelection(selected: string | string[] | null) {
@@ -372,7 +358,9 @@ export function useTranscriptionWorkspace() {
   );
   const progressFlushTimerRef = useRef<number | null>(null);
   const lastProgressCommitAtRef = useRef(0);
-  const openTaskDialogRef = useRef<(paths: string[]) => void>(() => {});
+  const openTaskDialogRef = useRef<(paths: string[]) => Promise<void>>(
+    async () => {},
+  );
   const downloadSpeedMovingAverageRef =
     useRef<DownloadSpeedMovingAverageTracker | null>(null);
 
@@ -411,17 +399,27 @@ export function useTranscriptionWorkspace() {
   }, [transcriptionModels, selectedModelId]);
 
   const openTaskDialog = useCallback(
-    (paths: string[]) => {
-      const acceptedPaths = uniquePaths(paths.filter(isSupportedMediaPath));
-      const rejectedCount = paths.length - acceptedPaths.length;
+    async (paths: string[]) => {
+      const uniqueSelectedPaths = uniquePaths(paths);
+      let acceptedPaths: string[];
+      try {
+        acceptedPaths = await invoke<string[]>("filter_existing_files", {
+          paths: uniqueSelectedPaths,
+        });
+      } catch (error) {
+        toast.error(formatInvokeError(error));
+        return;
+      }
+
+      const rejectedCount = uniqueSelectedPaths.length - acceptedPaths.length;
 
       if (acceptedPaths.length === 0) {
-        toast.error(t`沒有可加入的音訊或影片檔`);
+        toast.error(t`沒有可加入的檔案`);
         return;
       }
 
       if (rejectedCount > 0) {
-        toast.warning(t`已略過 ${rejectedCount} 個不支援的檔案`);
+        toast.warning(t`已略過 ${rejectedCount} 個不是檔案的項目`);
       }
 
       setTaskDraft({
@@ -688,7 +686,7 @@ export function useTranscriptionWorkspace() {
 
         setIsDraggingFiles(false);
         if (event.payload.type === "drop") {
-          openTaskDialogRef.current(event.payload.paths);
+          void openTaskDialogRef.current(event.payload.paths);
         }
       })
       .then((handler) => {
@@ -791,11 +789,10 @@ export function useTranscriptionWorkspace() {
   async function pickFilesForTasks() {
     const selected = await open({
       multiple: true,
-      filters: audioFilters,
     });
     const selectedPaths = pathsFromDialogSelection(selected);
     if (selectedPaths.length > 0) {
-      openTaskDialog(selectedPaths);
+      await openTaskDialog(selectedPaths);
     }
   }
 

@@ -548,7 +548,7 @@ export function TaskManagerPanel({
                     />
                   ) : null}
                   <p className="m-0 text-center text-sm/relaxed text-muted-foreground">
-                    wav、mp3、m4a、mp4、mov、mkv、webm
+                    <Trans>支援 FFmpeg 可處理且包含音訊流的音訊與視訊檔</Trans>
                   </p>
                 </Empty>
               )}

@@ -13,7 +13,7 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#: src/hooks/use-transcription-workspace.ts:590
+#: src/hooks/use-transcription-workspace.ts:584
 msgid "，已輸出"
 msgstr "，已输出"
 
@@ -23,7 +23,7 @@ msgid "{0} 下載進度"
 msgstr "{0} 下载进度"
 
 #. placeholder {0}: basename(task.audioPath)
-#: src/hooks/use-transcription-workspace.ts:608
+#: src/hooks/use-transcription-workspace.ts:602
 msgid "{0} 已終止"
 msgstr "{0} 已终止"
 
@@ -38,12 +38,12 @@ msgid "{0} 段"
 msgstr "{0} 段"
 
 #. placeholder {0}: basename(task.audioPath)
-#: src/hooks/use-transcription-workspace.ts:624
+#: src/hooks/use-transcription-workspace.ts:618
 msgid "{0} 轉錄失敗"
 msgstr "{0} 转录失败"
 
 #. placeholder {0}: basename(task.audioPath)
-#: src/hooks/use-transcription-workspace.ts:584
+#: src/hooks/use-transcription-workspace.ts:578
 msgid "{0} 轉錄完成"
 msgstr "{0} 转录完成"
 
@@ -169,7 +169,7 @@ msgstr "界面"
 msgid "介面語言"
 msgstr "界面语言"
 
-#: src/hooks/use-transcription-workspace.ts:992
+#: src/hooks/use-transcription-workspace.ts:985
 msgid "任務已結束，無法終止"
 msgstr "任务已结束，无法终止"
 
@@ -282,7 +282,7 @@ msgstr "在 Finder 中显示"
 msgid "在這裡管理 QwenASR 模型。"
 msgstr "在此管理 QwenASR 模型。"
 
-#: src/hooks/use-transcription-workspace.ts:1004
+#: src/hooks/use-transcription-workspace.ts:997
 msgid "執行中的任務無法移除"
 msgstr "无法移除正在执行的任务"
 
@@ -357,11 +357,11 @@ msgid "工具狀態"
 msgstr "工具状态"
 
 #. placeholder {0}: nextTasks.length
-#: src/hooks/use-transcription-workspace.ts:967
+#: src/hooks/use-transcription-workspace.ts:960
 msgid "已加入 {0} 個轉錄任務"
 msgstr "已加入 {0} 个转录任务"
 
-#: src/hooks/use-transcription-workspace.ts:589
+#: src/hooks/use-transcription-workspace.ts:583
 msgid "已完成"
 msgstr "已完成"
 
@@ -371,8 +371,12 @@ msgid "已用 {0}"
 msgstr "已用 {0}"
 
 #: src/hooks/use-transcription-workspace.ts:424
-msgid "已略過 {rejectedCount} 個不支援的檔案"
-msgstr "已跳过 {rejectedCount} 个不支持的文件"
+#~ msgid "已略過 {rejectedCount} 個不支援的檔案"
+#~ msgstr "已跳过 {rejectedCount} 个不支持的文件"
+
+#: src/hooks/use-transcription-workspace.ts:418
+msgid "已略過 {rejectedCount} 個不是檔案的項目"
+msgstr "已略过 {rejectedCount} 个不是文件的项目"
 
 #: src/components/transcription/TaskManagerPanel.tsx:131
 msgid "已終止"
@@ -418,7 +422,7 @@ msgstr "快速，适合大多数单文件和批量转录任务。"
 msgid "批次結果"
 msgstr "批次结果"
 
-#: src/hooks/use-transcription-workspace.ts:933
+#: src/hooks/use-transcription-workspace.ts:926
 msgid "找不到 Qwen3 ForcedAligner 模型設定"
 msgstr "找不到 Qwen3 ForcedAligner 模型配置"
 
@@ -446,6 +450,10 @@ msgstr "排队中"
 #: src/components/transcription/TaskManagerPanel.tsx:204
 msgid "提示詞"
 msgstr "提示词"
+
+#: src/components/transcription/TaskManagerPanel.tsx:551
+msgid "支援 FFmpeg 可處理且包含音訊流的音訊與視訊檔"
+msgstr "支持 FFmpeg 可处理且包含音频流的音频与视频文件"
 
 #: src/components/transcription/TaskManagerPanel.tsx:198
 msgid "收尾"
@@ -576,15 +584,15 @@ msgstr "模型下载总体进度"
 msgid "模型偵測"
 msgstr "模型检测"
 
-#: src/hooks/use-transcription-workspace.ts:880
+#: src/hooks/use-transcription-workspace.ts:873
 msgid "模型已刪除"
 msgstr "模型已删除"
 
-#: src/hooks/use-transcription-workspace.ts:828
+#: src/hooks/use-transcription-workspace.ts:821
 msgid "模型已可使用"
 msgstr "模型已可使用"
 
-#: src/hooks/use-transcription-workspace.ts:858
+#: src/hooks/use-transcription-workspace.ts:851
 msgid "模型正在任務佇列中使用"
 msgstr "模型正在任务队列中使用"
 
@@ -609,9 +617,13 @@ msgstr "此任务已停止，未生成新的转录结果。"
 msgid "江西方言 / Jiangxi"
 msgstr "江西方言"
 
+#: src/hooks/use-transcription-workspace.ts:413
+msgid "沒有可加入的檔案"
+msgstr "没有可添加的文件"
+
 #: src/hooks/use-transcription-workspace.ts:419
-msgid "沒有可加入的音訊或影片檔"
-msgstr "没有可添加的音频或视频文件"
+#~ msgid "沒有可加入的音訊或影片檔"
+#~ msgstr "没有可添加的音频或视频文件"
 
 #: src/lib/app-constants.ts:107
 msgid "河北方言 / Hebei"
@@ -952,7 +964,7 @@ msgstr "转录任务"
 msgid "轉錄失敗"
 msgstr "转录失败"
 
-#: src/hooks/use-transcription-workspace.ts:588
+#: src/hooks/use-transcription-workspace.ts:582
 msgid "轉錄完成"
 msgstr "转录完成"
 

@@ -181,24 +181,6 @@ export function localizeLanguageGroups(
   ] as const;
 }
 
-export const audioFilters = [
-  {
-    name: "Audio and video",
-    extensions: [
-      "wav",
-      "mp3",
-      "m4a",
-      "aac",
-      "flac",
-      "ogg",
-      "mp4",
-      "mov",
-      "mkv",
-      "webm",
-    ],
-  },
-];
-
 export const defaultOptions: OptionsState = {
   language: "auto",
   context: "",

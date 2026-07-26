@@ -65,7 +65,7 @@ export function SingleTranscriptionPanel({
                 {singleFile ? basename(singleFile) : "選取音訊或影片"}
               </span>
               <span className="block truncate text-sm text-muted-foreground">
-                {singleFile || "支援 wav、mp3、m4a、mp4、mov、mkv"}
+                {singleFile || "支援 FFmpeg 可處理且包含音訊流的檔案"}
               </span>
             </span>
           </button>

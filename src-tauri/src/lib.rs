@@ -12,6 +12,7 @@ use error::AppResult;
 use models::{
     FfmpegStatus, ModelStatus, TranscribeBatchRequest, TranscribeFileRequest, TranscriptionResult,
 };
+use std::path::PathBuf;
 use tauri::{ipc::Channel, AppHandle, State, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(desktop)]
@@ -40,6 +41,14 @@ fn list_available_models() -> AppResult<Vec<ModelStatus>> {
 #[tauri::command]
 fn get_ffmpeg_status() -> FfmpegStatus {
     audio::ffmpeg_status()
+}
+
+#[tauri::command]
+fn filter_existing_files(paths: Vec<String>) -> Vec<String> {
+    paths
+        .into_iter()
+        .filter(|path| PathBuf::from(path).is_file())
+        .collect()
 }
 
 #[tauri::command]
@@ -349,6 +358,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             list_available_models,
             get_ffmpeg_status,
+            filter_existing_files,
             download_model,
             delete_model,
             transcribe_file,
