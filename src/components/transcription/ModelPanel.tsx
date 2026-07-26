@@ -57,7 +57,9 @@ import type { DownloadProgress, ModelStatus } from "@/types/transcription";
 
 const modelDescriptionMessages = {
   "qwen3-asr-0.6b": msg`快速、適合大多數單次與批次轉錄工作。`,
+  "qwen3-asr-0.6b-ja-anime-galgame": msg`針對日本動畫、Galgame 與視覺小說語音微調，適合日語角色對白轉錄。`,
   "qwen3-asr-1.7b": msg`較高準確度，適合重要錄音或較複雜的聲學環境。`,
+  "qwen3-asr-1.7b-ja-anime-galgame": msg`針對日本動畫、Galgame 與視覺小說語音微調，適合需要較高準確度的日語角色對白。`,
   "qwen3-forced-aligner-0.6b": msg`對齊音訊與逐字稿，產生精準的字詞級字幕時間戳。`,
 };
 

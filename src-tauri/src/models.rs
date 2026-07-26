@@ -39,6 +39,22 @@ pub const KNOWN_MODELS: &[KnownModel] = &[
         role: ModelRole::Transcription,
     },
     KnownModel {
+        id: "qwen3-asr-0.6b-ja-anime-galgame",
+        title: "Qwen3-ASR 0.6B JA Anime/Galgame",
+        repo: "jaykwok/Qwen3-ASR-0.6B-JA-Anime-Galgame",
+        files: &[
+            "config.json",
+            "model.safetensors",
+            "vocab.json",
+            "merges.txt",
+            "tokenizer.json",
+        ],
+        description: "針對日本動畫、Galgame 與視覺小說語音微調，適合日語角色對白轉錄。",
+        size_hint: "~1.6 GB",
+        recommended: false,
+        role: ModelRole::Transcription,
+    },
+    KnownModel {
         id: "qwen3-asr-1.7b",
         title: "Qwen3-ASR 1.7B",
         repo: "Qwen/Qwen3-ASR-1.7B",
@@ -53,6 +69,22 @@ pub const KNOWN_MODELS: &[KnownModel] = &[
         ],
         description: "較高準確度，適合重要錄音或較複雜的聲學環境。",
         size_hint: "~4.7 GB",
+        recommended: false,
+        role: ModelRole::Transcription,
+    },
+    KnownModel {
+        id: "qwen3-asr-1.7b-ja-anime-galgame",
+        title: "Qwen3-ASR 1.7B JA Anime/Galgame",
+        repo: "jaykwok/Qwen3-ASR-1.7B-JA-Anime-Galgame",
+        files: &[
+            "config.json",
+            "model.safetensors",
+            "vocab.json",
+            "merges.txt",
+            "tokenizer.json",
+        ],
+        description: "針對日本動畫、Galgame 與視覺小說語音微調，適合需要較高準確度的日語角色對白。",
+        size_hint: "~4.1 GB",
         recommended: false,
         role: ModelRole::Transcription,
     },
@@ -257,7 +289,7 @@ pub struct TranscriptionProgress {
 
 #[cfg(test)]
 mod tests {
-    use super::TranscribeOptions;
+    use super::{find_known_model, ModelRole, TranscribeOptions};
 
     #[test]
     fn defaults_punctuation_segmentation_for_older_requests() {
@@ -280,5 +312,33 @@ mod tests {
         .unwrap();
 
         assert_eq!(options.context, "QwenASR、Tauri");
+    }
+
+    #[test]
+    fn includes_japanese_anime_galgame_models_for_transcription() {
+        for model_id in [
+            "qwen3-asr-0.6b-ja-anime-galgame",
+            "qwen3-asr-1.7b-ja-anime-galgame",
+        ] {
+            let model = find_known_model(model_id).unwrap();
+
+            assert!(matches!(model.role, ModelRole::Transcription));
+            assert_eq!(
+                model.files,
+                [
+                    "config.json",
+                    "model.safetensors",
+                    "vocab.json",
+                    "merges.txt",
+                    "tokenizer.json"
+                ]
+            );
+            assert!(!model.files.iter().any(|file| {
+                matches!(
+                    *file,
+                    "optimizer.pt" | "scheduler.pt" | "rng_state.pth" | "training_args.bin"
+                )
+            }));
+        }
     }
 }
