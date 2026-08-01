@@ -143,6 +143,8 @@ function App() {
                       isDownloading={workspace.isDownloading}
                       deletingModelId={workspace.deletingModelId}
                       isTranscribing={workspace.isTranscribing}
+                      autoSkipNonSpeech={workspace.options.autoSkipNonSpeech}
+                      onAutoSkipNonSpeechChange={workspace.setAutoSkipNonSpeech}
                       ffmpeg={workspace.ffmpeg}
                       onDownload={workspace.downloadSelectedModel}
                       onDeleteModel={workspace.deleteModel}

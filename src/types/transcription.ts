@@ -114,6 +114,7 @@ export type OptionsState = {
   writeSrt: boolean;
   writeJson: boolean;
   segmentByPunctuation: boolean;
+  autoSkipNonSpeech: boolean;
 };
 
 export type TaskStatus =

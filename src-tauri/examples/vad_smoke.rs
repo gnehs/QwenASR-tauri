@@ -22,7 +22,7 @@ fn main() -> Result<()> {
     let samples = audio::read_normalized_i16(prepared.inference_path())?;
     let audio_seconds = samples.len() as f64 / audio::ASR_SAMPLE_RATE as f64;
 
-    let analysis = vad::analyze_with_progress(&samples, |progress| {
+    let analysis = vad::analyze_with_options(&samples, true, |progress| {
         println!(
             "{:>6.2}s  {:>5.1}%  {}",
             started.elapsed().as_secs_f64(),

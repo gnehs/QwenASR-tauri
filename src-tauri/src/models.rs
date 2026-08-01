@@ -166,6 +166,8 @@ pub struct TranscribeOptions {
     pub write_json: bool,
     #[serde(default = "default_true")]
     pub segment_by_punctuation: bool,
+    #[serde(default = "default_true")]
+    pub auto_skip_non_speech: bool,
     pub output_dir: Option<String>,
 }
 
@@ -299,6 +301,7 @@ mod tests {
         .unwrap();
 
         assert!(options.segment_by_punctuation);
+        assert!(options.auto_skip_non_speech);
         assert!(options.context.is_empty());
         assert!(!options.write_txt);
         assert!(!options.write_json);
@@ -307,11 +310,12 @@ mod tests {
     #[test]
     fn deserializes_recognition_context() {
         let options: TranscribeOptions = serde_json::from_str(
-            r#"{"modelId":"qwen3-asr-0.6b","language":"Chinese","context":"QwenASR、Tauri","writeSrt":false,"segmentByPunctuation":true,"outputDir":null}"#,
+            r#"{"modelId":"qwen3-asr-0.6b","language":"Chinese","context":"QwenASR、Tauri","writeSrt":false,"segmentByPunctuation":true,"autoSkipNonSpeech":false,"outputDir":null}"#,
         )
         .unwrap();
 
         assert_eq!(options.context, "QwenASR、Tauri");
+        assert!(!options.auto_skip_non_speech);
     }
 
     #[test]

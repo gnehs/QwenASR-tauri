@@ -188,4 +188,5 @@ export const defaultOptions: OptionsState = {
   writeSrt: true,
   writeJson: false,
   segmentByPunctuation: true,
+  autoSkipNonSpeech: true,
 };

@@ -1,9 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { i18n } from "@lingui/core";
 import { Trans, useLingui } from "@lingui/react/macro";
 import { useTheme } from "next-themes";
 
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldTitle,
+} from "@/components/ui/field";
 import {
   Select,
   SelectContent,
@@ -15,6 +22,7 @@ import {
 import { ModelPanel } from "@/components/transcription/ModelPanel";
 import { RuntimePanel } from "@/components/transcription/RuntimePanel";
 import { SettingsSection } from "@/components/transcription/SettingsSection";
+import { Switch } from "@/components/ui/switch";
 import { activateLocale, locales, type Locale } from "@/i18n";
 import type {
   DownloadProgress,
@@ -42,6 +50,8 @@ export function SettingsPanel({
   isDownloading,
   deletingModelId,
   isTranscribing,
+  autoSkipNonSpeech,
+  onAutoSkipNonSpeechChange,
   ffmpeg,
   onDownload,
   onDeleteModel,
@@ -55,6 +65,8 @@ export function SettingsPanel({
   isDownloading: boolean;
   deletingModelId: string | null;
   isTranscribing: boolean;
+  autoSkipNonSpeech: boolean;
+  onAutoSkipNonSpeechChange: (checked: boolean) => void;
   ffmpeg: FfmpegStatus;
   onDownload: (modelId?: string) => void;
   onDeleteModel: (modelId: string) => Promise<boolean>;
@@ -63,6 +75,7 @@ export function SettingsPanel({
   onRefresh: () => void;
 }) {
   const { t } = useLingui();
+  const autoSkipNonSpeechId = useId();
   const [isChangingLocale, setIsChangingLocale] = useState(false);
   const [isThemeMounted, setIsThemeMounted] = useState(false);
   const { setTheme, theme } = useTheme();
@@ -160,6 +173,30 @@ export function SettingsPanel({
             </Select>
           </Field>
         </FieldGroup>
+      </SettingsSection>
+      <SettingsSection
+        id="transcription-panel-title"
+        title={<Trans>轉錄</Trans>}
+        description={<Trans>調整音訊分析與語音轉錄流程。</Trans>}
+      >
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldTitle id={`${autoSkipNonSpeechId}-label`}>
+              <Trans>自動跳過非說話片段</Trans>
+            </FieldTitle>
+            <FieldDescription id={`${autoSkipNonSpeechId}-description`}>
+              <Trans>
+                可以自動跳過非說話片段，加速語音轉錄流程，但可能某些說話片段會被意外跳過。
+              </Trans>
+            </FieldDescription>
+          </FieldContent>
+          <Switch
+            aria-labelledby={`${autoSkipNonSpeechId}-label`}
+            aria-describedby={`${autoSkipNonSpeechId}-description`}
+            checked={autoSkipNonSpeech}
+            onCheckedChange={onAutoSkipNonSpeechChange}
+          />
+        </Field>
       </SettingsSection>
       <ModelPanel
         models={models}

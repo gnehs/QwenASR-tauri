@@ -99,17 +99,37 @@ struct Cmvn {
     inverse_std_variances: Vec<f32>,
 }
 
-pub fn analyze_with_progress<F>(samples: &[i16], mut progress: F) -> AppResult<VadAnalysis>
+pub fn analyze_with_options<F>(
+    samples: &[i16],
+    skip_non_speech: bool,
+    mut progress: F,
+) -> AppResult<VadAnalysis>
 where
     F: FnMut(VadProgress),
 {
-    emit_vad_progress(&mut progress, 0.0, "準備 FireRedVAD 分析");
+    let analysis_start_message = if skip_non_speech {
+        "準備 FireRedVAD 分析"
+    } else {
+        "準備完整音訊片段"
+    };
+    emit_vad_progress(&mut progress, 0.0, analysis_start_message);
 
     if samples.is_empty() {
         emit_vad_progress(&mut progress, 1.0, "語音片段分析完成");
         return Ok(VadAnalysis {
             chunks: Vec::new(),
             chunk_audio_ms: 0,
+            skipped_silence_ms: 0,
+        });
+    }
+
+    if !skip_non_speech {
+        let chunks = split_long_range(AudioRange::new(0, samples.len()));
+        let chunk_audio_ms = chunks.iter().map(|chunk| chunk.duration_ms()).sum();
+        emit_vad_progress(&mut progress, 1.0, "保留完整音訊片段");
+        return Ok(VadAnalysis {
+            chunks,
+            chunk_audio_ms,
             skipped_silence_ms: 0,
         });
     }
@@ -1009,13 +1029,26 @@ mod tests {
         let samples = vec![0i16; ms_to_samples(2_000)];
         let mut reports = Vec::new();
         let analysis =
-            analyze_with_progress(&samples, |progress| reports.push(progress.ratio)).unwrap();
+            analyze_with_options(&samples, true, |progress| reports.push(progress.ratio)).unwrap();
 
         assert_eq!(analysis.chunks, vec![AudioRange::new(0, samples.len())]);
         assert_eq!(analysis.skipped_silence_ms, 0);
         assert!(reports.iter().any(|ratio| *ratio > 0.0 && *ratio < 1.0));
         assert_eq!(reports.last().copied(), Some(1.0));
         assert!(reports.windows(2).all(|window| window[0] <= window[1]));
+    }
+
+    #[test]
+    fn keeps_whole_audio_when_non_speech_skipping_is_disabled() {
+        let samples = vec![0i16; ms_to_samples(2_000)];
+        let mut reports = Vec::new();
+        let analysis =
+            analyze_with_options(&samples, false, |progress| reports.push(progress.ratio)).unwrap();
+
+        assert_eq!(analysis.chunks, vec![AudioRange::new(0, samples.len())]);
+        assert_eq!(analysis.chunk_audio_ms, audio::samples_to_ms(samples.len()));
+        assert_eq!(analysis.skipped_silence_ms, 0);
+        assert_eq!(reports, vec![0.0, 1.0]);
     }
 
     #[test]

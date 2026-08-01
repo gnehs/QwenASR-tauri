@@ -1180,12 +1180,17 @@ fn transcribe_with_context(
     check_cancelled(cancel)?;
     timings.audio_prepare_ms = audio_prepare_started.elapsed().as_millis();
     let analysis_percent = progress_between(range_start, range_end, VAD_PHASE_START);
+    let analysis_message = if options.auto_skip_non_speech {
+        "偵測語音與靜音片段"
+    } else {
+        "保留完整音訊片段"
+    };
     emit_progress(
         app,
         progress_started,
         "running",
         "analyzingAudio",
-        "偵測語音與靜音片段",
+        analysis_message,
         Some(audio_path),
         Some(audio_path),
         file_index,
@@ -1198,33 +1203,37 @@ fn transcribe_with_context(
     let mut last_vad_message = "";
     let vad_started = Instant::now();
     let cancel_for_vad = Arc::clone(cancel);
-    let vad_analysis = vad::analyze_with_progress(&normalized_samples, |vad_progress| {
-        if cancel_for_vad.load(Ordering::Relaxed) {
-            return;
-        }
+    let vad_analysis = vad::analyze_with_options(
+        &normalized_samples,
+        options.auto_skip_non_speech,
+        |vad_progress| {
+            if cancel_for_vad.load(Ordering::Relaxed) {
+                return;
+            }
 
-        let file_ratio = progress_between(VAD_PHASE_START, VAD_PHASE_END, vad_progress.ratio);
-        let percent = progress_between(range_start, range_end, file_ratio);
-        let message_changed = vad_progress.message != last_vad_message;
-        let moved_enough = percent - last_vad_percent >= 0.5;
-        if message_changed || moved_enough || vad_progress.ratio >= 1.0 {
-            last_vad_percent = percent;
-            last_vad_message = vad_progress.message;
-            emit_progress(
-                app,
-                progress_started,
-                "running",
-                "analyzingAudio",
-                vad_progress.message,
-                Some(audio_path),
-                Some(audio_path),
-                file_index,
-                total_files,
-                percent,
-                None,
-            );
-        }
-    })?;
+            let file_ratio = progress_between(VAD_PHASE_START, VAD_PHASE_END, vad_progress.ratio);
+            let percent = progress_between(range_start, range_end, file_ratio);
+            let message_changed = vad_progress.message != last_vad_message;
+            let moved_enough = percent - last_vad_percent >= 0.5;
+            if message_changed || moved_enough || vad_progress.ratio >= 1.0 {
+                last_vad_percent = percent;
+                last_vad_message = vad_progress.message;
+                emit_progress(
+                    app,
+                    progress_started,
+                    "running",
+                    "analyzingAudio",
+                    vad_progress.message,
+                    Some(audio_path),
+                    Some(audio_path),
+                    file_index,
+                    total_files,
+                    percent,
+                    None,
+                );
+            }
+        },
+    )?;
     check_cancelled(cancel)?;
     timings.vad_ms = vad_started.elapsed().as_millis();
     let chunks = vad_analysis.chunks;
@@ -1239,7 +1248,9 @@ fn transcribe_with_context(
     let mut vad_estimated_segments = Vec::new();
     let total_chunks = chunks.len();
     let total_asr_work_ms = total_chunk_work_ms(&chunks);
-    let vad_message = if skipped_silence_ms > 0 {
+    let vad_message = if !options.auto_skip_non_speech {
+        format!("停用自動跳過非說話片段，將處理完整音訊（共 {total_chunks} 個片段）")
+    } else if skipped_silence_ms > 0 {
         format!(
             "找到 {total_chunks} 個有聲片段，將跳過 {} 靜音",
             format_duration_short(skipped_silence_ms)
@@ -3312,6 +3323,7 @@ mod tests {
             write_srt,
             write_json: false,
             segment_by_punctuation: true,
+            auto_skip_non_speech: true,
             output_dir: None,
         };
 
@@ -3328,6 +3340,7 @@ mod tests {
             write_srt: false,
             write_json: true,
             segment_by_punctuation: true,
+            auto_skip_non_speech: true,
             output_dir: None,
         };
 
@@ -3408,6 +3421,7 @@ mod tests {
             write_srt: true,
             write_json: true,
             segment_by_punctuation: true,
+            auto_skip_non_speech: true,
             output_dir: Some(directory.to_string_lossy().into_owned()),
         };
 

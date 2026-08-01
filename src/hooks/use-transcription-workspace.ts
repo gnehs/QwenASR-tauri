@@ -115,6 +115,10 @@ function readStoredTranscriptionOptions(): OptionsState {
       typeof stored.writeJson === "boolean"
         ? stored.writeJson
         : defaultOptions.writeJson;
+    const autoSkipNonSpeech =
+      typeof stored.autoSkipNonSpeech === "boolean"
+        ? stored.autoSkipNonSpeech
+        : defaultOptions.autoSkipNonSpeech;
 
     return {
       language,
@@ -123,6 +127,7 @@ function readStoredTranscriptionOptions(): OptionsState {
       writeSrt,
       writeJson,
       segmentByPunctuation,
+      autoSkipNonSpeech,
     };
   } catch {
     return { ...defaultOptions };
@@ -179,6 +184,7 @@ function buildOptionsPayload(task: TranscriptionTask) {
     writeSrt: task.options.writeSrt,
     writeJson: task.options.writeJson,
     segmentByPunctuation: task.options.segmentByPunctuation,
+    autoSkipNonSpeech: task.options.autoSkipNonSpeech,
     outputDir: task.outputDir || null,
   };
 }
@@ -972,6 +978,18 @@ export function useTranscriptionWorkspace() {
     }
   }
 
+  function setAutoSkipNonSpeech(autoSkipNonSpeech: boolean) {
+    setOptions((current) => {
+      const next = { ...current, autoSkipNonSpeech };
+      writeStoredTranscriptionOptions(next);
+      return next;
+    });
+    setTaskDraft((current) => ({
+      ...current,
+      options: { ...current.options, autoSkipNonSpeech },
+    }));
+  }
+
   async function cancelTask(taskId: string) {
     const task = tasks.find((item) => item.id === taskId);
     if (task?.status !== "running" || cancellingTaskIdRef.current) return;
@@ -1044,6 +1062,7 @@ export function useTranscriptionWorkspace() {
     transcribedFileCount,
     outputDir,
     options,
+    setAutoSkipNonSpeech,
     downloadProgress,
     downloadMovingAverageSpeedBytesPerSec,
     isDownloading,

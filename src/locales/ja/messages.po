@@ -13,7 +13,7 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#: src/hooks/use-transcription-workspace.ts:584
+#: src/hooks/use-transcription-workspace.ts:594
 msgid "，已輸出"
 msgstr "、出力済み"
 
@@ -23,7 +23,7 @@ msgid "{0} 下載進度"
 msgstr "{0} のダウンロード進捗"
 
 #. placeholder {0}: basename(task.audioPath)
-#: src/hooks/use-transcription-workspace.ts:602
+#: src/hooks/use-transcription-workspace.ts:612
 msgid "{0} 已終止"
 msgstr "{0} をキャンセルしました"
 
@@ -38,12 +38,12 @@ msgid "{0} 段"
 msgstr "{0} セグメント"
 
 #. placeholder {0}: basename(task.audioPath)
-#: src/hooks/use-transcription-workspace.ts:618
+#: src/hooks/use-transcription-workspace.ts:628
 msgid "{0} 轉錄失敗"
 msgstr "{0} の文字起こしに失敗しました"
 
 #. placeholder {0}: basename(task.audioPath)
-#: src/hooks/use-transcription-workspace.ts:578
+#: src/hooks/use-transcription-workspace.ts:588
 msgid "{0} 轉錄完成"
 msgstr "{0} の文字起こしが完了しました"
 
@@ -152,24 +152,24 @@ msgstr "デンマーク語"
 msgid "主要語言"
 msgstr "主要言語"
 
-#: src/components/transcription/SettingsPanel.tsx:131
-#: src/components/transcription/SettingsPanel.tsx:145
+#: src/components/transcription/SettingsPanel.tsx:144
+#: src/components/transcription/SettingsPanel.tsx:158
 msgid "主題配色"
 msgstr "テーマ"
 
-#: src/components/transcription/SettingsPanel.tsx:75
+#: src/components/transcription/SettingsPanel.tsx:88
 msgid "亮色"
 msgstr "ライト"
 
-#: src/components/transcription/SettingsPanel.tsx:98
+#: src/components/transcription/SettingsPanel.tsx:111
 msgid "介面"
 msgstr "インターフェース"
 
-#: src/components/transcription/SettingsPanel.tsx:114
+#: src/components/transcription/SettingsPanel.tsx:127
 msgid "介面語言"
 msgstr "インターフェース言語"
 
-#: src/hooks/use-transcription-workspace.ts:985
+#: src/hooks/use-transcription-workspace.ts:1007
 msgid "任務已結束，無法終止"
 msgstr "タスクはすでに終了しているため、キャンセルできません"
 
@@ -249,6 +249,10 @@ msgstr "リアルタイム文字起こし"
 msgid "取消"
 msgstr "キャンセル"
 
+#: src/components/transcription/SettingsPanel.tsx:188
+msgid "可以自動跳過非說話片段，加速語音轉錄流程，但可能某些說話片段會被意外跳過。"
+msgstr "非音声区間を自動的にスキップして文字起こしを高速化できますが、一部の音声区間が誤ってスキップされる可能性があります。"
+
 #: src/components/transcription/OptionsPanel.tsx:140
 #: src/components/transcription/TaskManagerPanel.tsx:752
 msgid "可同時輸出多種格式至指定資料夾。"
@@ -282,7 +286,7 @@ msgstr "Finderで表示"
 msgid "在這裡管理 QwenASR 模型。"
 msgstr "ここで QwenASR モデルを管理します。"
 
-#: src/hooks/use-transcription-workspace.ts:997
+#: src/hooks/use-transcription-workspace.ts:1019
 msgid "執行中的任務無法移除"
 msgstr "実行中のタスクは削除できません"
 
@@ -357,11 +361,11 @@ msgid "工具狀態"
 msgstr "ツールの状態"
 
 #. placeholder {0}: nextTasks.length
-#: src/hooks/use-transcription-workspace.ts:960
+#: src/hooks/use-transcription-workspace.ts:970
 msgid "已加入 {0} 個轉錄任務"
 msgstr "{0} 件の文字起こしタスクを追加しました"
 
-#: src/hooks/use-transcription-workspace.ts:583
+#: src/hooks/use-transcription-workspace.ts:593
 msgid "已完成"
 msgstr "完了"
 
@@ -374,7 +378,7 @@ msgstr "経過 {0}"
 #~ msgid "已略過 {rejectedCount} 個不支援的檔案"
 #~ msgstr "サポートされていないファイルを {rejectedCount} 個スキップしました"
 
-#: src/hooks/use-transcription-workspace.ts:418
+#: src/hooks/use-transcription-workspace.ts:428
 msgid "已略過 {rejectedCount} 個不是檔案的項目"
 msgstr "ファイルではない {rejectedCount} 個の項目をスキップしました"
 
@@ -422,7 +426,7 @@ msgstr "高速で、ほとんどの単一ファイルおよびバッチ文字起
 msgid "批次結果"
 msgstr "バッチ結果"
 
-#: src/hooks/use-transcription-workspace.ts:926
+#: src/hooks/use-transcription-workspace.ts:936
 msgid "找不到 Qwen3 ForcedAligner 模型設定"
 msgstr "Qwen3 ForcedAligner モデルの設定が見つかりません"
 
@@ -524,7 +528,7 @@ msgstr "時間"
 msgid "時間對齊"
 msgstr "時間アラインメント"
 
-#: src/components/transcription/SettingsPanel.tsx:76
+#: src/components/transcription/SettingsPanel.tsx:89
 msgid "暗色"
 msgstr "ダーク"
 
@@ -584,15 +588,15 @@ msgstr "モデルのダウンロード全体の進捗"
 msgid "模型偵測"
 msgstr "モデル検出"
 
-#: src/hooks/use-transcription-workspace.ts:873
+#: src/hooks/use-transcription-workspace.ts:883
 msgid "模型已刪除"
 msgstr "モデルを削除しました"
 
-#: src/hooks/use-transcription-workspace.ts:821
+#: src/hooks/use-transcription-workspace.ts:831
 msgid "模型已可使用"
 msgstr "モデルを利用できます"
 
-#: src/hooks/use-transcription-workspace.ts:851
+#: src/hooks/use-transcription-workspace.ts:861
 msgid "模型正在任務佇列中使用"
 msgstr "モデルはキュー内のタスクで使用中です"
 
@@ -617,7 +621,7 @@ msgstr "このタスクは停止され、新しい文字起こし結果は生成
 msgid "江西方言 / Jiangxi"
 msgstr "江西方言"
 
-#: src/hooks/use-transcription-workspace.ts:413
+#: src/hooks/use-transcription-workspace.ts:423
 msgid "沒有可加入的檔案"
 msgstr "追加できるファイルがありません"
 
@@ -815,6 +819,10 @@ msgstr "句点や読点などの句読点で自動的に分割します。SRT �
 msgid "自動偵測"
 msgstr "自動検出"
 
+#: src/components/transcription/SettingsPanel.tsx:185
+msgid "自動跳過非說話片段"
+msgstr "非音声区間を自動的にスキップ"
+
 #: src/lib/app-constants.ts:93
 msgid "芬蘭文 / Finnish"
 msgstr "フィンランド語"
@@ -850,7 +858,7 @@ msgstr "デコード"
 msgid "設定"
 msgstr "設定"
 
-#: src/components/transcription/SettingsPanel.tsx:104
+#: src/components/transcription/SettingsPanel.tsx:117
 msgid "語言"
 msgstr "言語"
 
@@ -865,6 +873,10 @@ msgstr "ヘルプ"
 #: src/components/transcription/OptionsPanel.tsx:86
 msgid "調整"
 msgstr "調整"
+
+#: src/components/transcription/SettingsPanel.tsx:180
+msgid "調整音訊分析與語音轉錄流程。"
+msgstr "音声分析と文字起こしの処理を調整します。"
 
 #: src/components/transcription/RuntimePanel.tsx:45
 msgid "請在終端機安裝："
@@ -895,7 +907,7 @@ msgstr "データ"
 msgid "越南文 / Vietnamese"
 msgstr "ベトナム語"
 
-#: src/components/transcription/SettingsPanel.tsx:74
+#: src/components/transcription/SettingsPanel.tsx:87
 msgid "跟隨系統"
 msgstr "システム設定に従う"
 
@@ -903,7 +915,7 @@ msgstr "システム設定に従う"
 msgid "較高準確度，適合重要錄音或較複雜的聲學環境。"
 msgstr "重要な録音や複雑な音響環境に適した高精度モデルです。"
 
-#: src/components/transcription/SettingsPanel.tsx:147
+#: src/components/transcription/SettingsPanel.tsx:160
 msgid "載入中…"
 msgstr "読み込み中…"
 
@@ -947,6 +959,7 @@ msgstr "出力言語"
 msgid "輸出資料夾"
 msgstr "出力フォルダー"
 
+#: src/components/transcription/SettingsPanel.tsx:179
 #: src/components/transcription/TranscriptionProgressPanel.tsx:68
 msgid "轉錄"
 msgstr "文字起こし"
@@ -964,7 +977,7 @@ msgstr "文字起こしタスク"
 msgid "轉錄失敗"
 msgstr "文字起こしに失敗しました"
 
-#: src/hooks/use-transcription-workspace.ts:582
+#: src/hooks/use-transcription-workspace.ts:592
 msgid "轉錄完成"
 msgstr "文字起こしが完了しました"
 
@@ -1027,7 +1040,7 @@ msgstr "進捗"
 msgid "選取"
 msgstr "選択"
 
-#: src/components/transcription/SettingsPanel.tsx:99
+#: src/components/transcription/SettingsPanel.tsx:112
 msgid "選擇介面語言與主題配色。"
 msgstr "インターフェースの言語とテーマを選択します。"
 
