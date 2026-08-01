@@ -137,11 +137,16 @@ impl AsrInference {
         context: &str,
         language: Option<&str>,
     ) -> Result<TranscribeResult> {
-        Ok(self
+        let result = self
             .transcribe_samples_with_context_impl::<fn(&PartialTranscription) -> StreamingControl>(
                 samples, context, language, None,
-            )?
-            .transcription)
+            )?;
+        if result.status == StreamingStatus::ReachedTokenLimit {
+            return Err(anyhow::anyhow!(
+                "ASR generation reached the {MAX_NEW_TOKENS}-token limit; audio chunk may be truncated"
+            ));
+        }
+        Ok(result.transcription)
     }
 
     /// Transcribe decoded mono audio samples while reporting each generated token.
@@ -308,6 +313,9 @@ impl AsrInference {
 
             current_pos += 1;
         }
+        if streaming_status == StreamingStatus::Completed && generated_ids.len() == MAX_NEW_TOKENS {
+            streaming_status = StreamingStatus::ReachedTokenLimit;
+        }
         timings.decode_ms = decode_started.elapsed().as_millis();
 
         // Step 9: Parse output
@@ -396,11 +404,12 @@ pub enum StreamingControl {
     Stop,
 }
 
-/// Indicates whether decoding completed normally or was stopped by a callback.
+/// Indicates how autoregressive decoding terminated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StreamingStatus {
     Completed,
     StoppedByCallback,
+    ReachedTokenLimit,
 }
 
 /// Cumulative parsed transcription emitted after a generated token.

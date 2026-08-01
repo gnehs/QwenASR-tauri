@@ -46,7 +46,9 @@ const EXTEND_SPEECH_FRAMES: usize = 0;
 
 const BOUNDARY_PAD_MS: u64 = 100;
 const SPLIT_AFTER_SILENCE_MS: u64 = 800;
-const MAX_CHUNK_MS: u64 = 240_000;
+// Keep chunks within the vendored decoder's 512-token generation budget so
+// trailing speech cannot be silently cut off when decoding reaches the cap.
+const MAX_CHUNK_MS: u64 = 30_000;
 const MIN_CHUNK_MS: u64 = 500;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1052,10 +1054,26 @@ mod tests {
     }
 
     #[test]
-    fn caps_continuous_speech_at_four_minutes() {
-        let chunks = split_long_range(AudioRange::new(0, ms_to_samples(10 * 60_000)));
+    fn bounds_complete_audio_when_non_speech_skipping_is_disabled() {
+        let samples = vec![0i16; ms_to_samples(65_000)];
+        let analysis = analyze_with_options(&samples, false, |_| {}).unwrap();
+
+        assert_eq!(analysis.chunks.len(), 3);
+        assert_eq!(analysis.chunks[0].duration_ms(), 30_000);
+        assert_eq!(analysis.chunks[1].duration_ms(), 30_000);
+        assert_eq!(analysis.chunks[2].duration_ms(), 5_000);
+        assert_eq!(analysis.chunk_audio_ms, 65_000);
+        assert_eq!(analysis.skipped_silence_ms, 0);
+    }
+
+    #[test]
+    fn caps_continuous_speech_at_thirty_second_chunks() {
+        let chunks = split_long_range(AudioRange::new(0, ms_to_samples(65_000)));
 
         assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].duration_ms(), 30_000);
+        assert_eq!(chunks[1].duration_ms(), 30_000);
+        assert_eq!(chunks[2].duration_ms(), 5_000);
         assert!(chunks
             .iter()
             .all(|chunk| chunk.duration_ms() <= MAX_CHUNK_MS));

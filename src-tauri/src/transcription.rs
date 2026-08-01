@@ -1432,6 +1432,11 @@ fn transcribe_with_context(
                     "Qwen3-ASR streaming stopped unexpectedly on chunk {chunk_index}/{total_chunks}."
                 )));
             }
+            if streaming_result.status == StreamingStatus::ReachedTokenLimit {
+                return Err(AppError::Transcription(format!(
+                    "Qwen3-ASR reached its token limit on chunk {chunk_index}/{total_chunks}; the chunk may be truncated."
+                )));
+            }
             streaming_result.transcription
         } else {
             engine
